@@ -1,0 +1,60 @@
+{
+ "creation": "2024-05-03 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "merchant_id",
+  "merchant_key",
+  "passphrase",
+  "sandbox_mode"
+ ],
+ "fields": [
+  {
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "label": "Merchant ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "merchant_key",
+   "fieldtype": "Data",
+   "label": "Merchant Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "passphrase",
+   "fieldtype": "Password",
+   "label": "Passphrase"
+  },
+  {
+   "default": "0",
+   "fieldname": "sandbox_mode",
+   "fieldtype": "Check",
+   "label": "Sandbox Mode"
+  }
+ ],
+ "modified": "2024-05-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payments",
+ "name": "Payfast Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "is_payment_gateway": 1
+}

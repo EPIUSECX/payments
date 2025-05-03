@@ -178,4 +178,11 @@ override_whitelisted_methods = {
 # Make link fields search translated document names for these DocTypes
 # Recommended only for DocTypes which have limited documents with untranslated names
 # For example: Role, Gender, etc.
+# Web Routes
+# ----------
+
+web_include_routes = {
+    "/payments/payfast_itn": "payments.payment_gateways.payfast_itn.handle_itn"
+}
+
 # translated_search_doctypes = []
