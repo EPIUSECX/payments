@@ -4,28 +4,22 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "merchant_id",
-  "merchant_key",
-  "passphrase",
+  "public_key",
+  "secret_key",
   "sandbox_mode"
  ],
  "fields": [
   {
-   "fieldname": "merchant_id",
+   "fieldname": "public_key",
    "fieldtype": "Data",
-   "label": "Merchant ID",
+   "label": "Public Key",
    "reqd": 1
   },
   {
-   "fieldname": "merchant_key",
-   "fieldtype": "Data",
-   "label": "Merchant Key",
-   "reqd": 1
-  },
-  {
-   "fieldname": "passphrase",
+   "fieldname": "secret_key",
    "fieldtype": "Password",
-   "label": "Passphrase"
+   "label": "Secret Key",
+   "reqd": 1
   },
   {
    "default": "0",
@@ -37,7 +31,7 @@
  "modified": "2024-05-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Payment Gateways",
- "name": "Payfast Settings",
+ "name": "Yoco Settings",
  "owner": "Administrator",
  "permissions": [
   {

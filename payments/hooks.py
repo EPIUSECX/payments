@@ -183,7 +183,8 @@ override_whitelisted_methods = {
 
 web_include_routes = {
     "/payments/payfast_itn": "payments.payment_gateways.payfast_itn.handle_itn",
-    "/payments/paystack_webhook": "payments.payment_gateways.paystack_webhook.handle_webhook"
+    "/payments/paystack_webhook": "payments.payment_gateways.paystack_webhook.handle_webhook",
+    "/payments/yoco_webhook": "payments.payment_gateways.yoco_webhook.handle_webhook"
 }
 
 # translated_search_doctypes = []
