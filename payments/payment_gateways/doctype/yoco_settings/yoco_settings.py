@@ -12,11 +12,11 @@ class YocoSettings(Document):
         from frappe.utils import call_hook_method
 
         create_payment_gateway(
-            "Yoco-" + self.gateway_name,
+            "Yoco-" + self.name,
             settings="Yoco Settings",
             controller="Yoco Settings",
         )
-        call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.gateway_name)
+        call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.name)
 
     def validate_transaction_currency(self, currency):
         # Yoco primarily supports ZAR

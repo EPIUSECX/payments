@@ -12,11 +12,11 @@ class PayfastSettings(Document):
         from frappe.utils import call_hook_method
 
         create_payment_gateway(
-            "Payfast-" + self.gateway_name,
+            "Payfast-" + self.name,
             settings="Payfast Settings",
             controller="Payfast Settings",
         )
-        call_hook_method("payment_gateway_enabled", gateway="Payfast-" + self.gateway_name)
+        call_hook_method("payment_gateway_enabled", gateway="Payfast-" + self.name)
 
     def validate_transaction_currency(self, currency):
         # Basic currency validation: only ZAR supported in this basic implementation

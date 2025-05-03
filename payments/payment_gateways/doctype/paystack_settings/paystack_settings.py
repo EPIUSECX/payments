@@ -12,11 +12,11 @@ class PaystackSettings(Document):
         from frappe.utils import call_hook_method
 
         create_payment_gateway(
-            "Paystack-" + self.gateway_name,
+            "Paystack-" + self.name,
             settings="Paystack Settings",
             controller="Paystack Settings",
         )
-        call_hook_method("payment_gateway_enabled", gateway="Paystack-" + self.gateway_name)
+        call_hook_method("payment_gateway_enabled", gateway="Paystack-" + self.name)
 
     def validate_transaction_currency(self, currency):
         supported_currencies = ['NGN', 'GHS', 'ZAR', 'USD'] # As per example
