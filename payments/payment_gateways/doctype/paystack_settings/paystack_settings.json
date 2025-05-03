@@ -1,0 +1,54 @@
+{
+ "creation": "2024-05-03 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "public_key",
+  "secret_key",
+  "test_mode"
+ ],
+ "fields": [
+  {
+   "fieldname": "public_key",
+   "fieldtype": "Data",
+   "label": "Public Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "secret_key",
+   "fieldtype": "Password",
+   "label": "Secret Key",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "test_mode",
+   "fieldtype": "Check",
+   "label": "Test Mode"
+  }
+ ],
+ "modified": "2024-05-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payments",
+ "name": "Paystack Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "is_payment_gateway": 1
+}
