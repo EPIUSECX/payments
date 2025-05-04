@@ -14,7 +14,7 @@ class PaystackSettings(Document):
         create_payment_gateway(
             "Paystack-" + self.name,
             settings="Paystack Settings",
-            controller="Paystack Settings",
+            controller=self.name,
         )
         call_hook_method("payment_gateway_enabled", gateway="Paystack-" + self.name)
 

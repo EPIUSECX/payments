@@ -47,7 +47,12 @@ def get_checkout_url(**kwargs):
 
 def create_payment_gateway(gateway, settings=None, controller=None):
 	# NOTE: we don't translate Payment Gateway name because it is an internal doctype
-	if not frappe.db.exists("Payment Gateway", gateway):
+	if frappe.db.exists("Payment Gateway", gateway):
+		payment_gateway = frappe.get_doc("Payment Gateway", gateway)
+		payment_gateway.gateway_settings = settings
+		payment_gateway.gateway_controller = controller
+		payment_gateway.save(ignore_permissions=True)
+	else:
 		payment_gateway = frappe.get_doc(
 			{
 				"doctype": "Payment Gateway",

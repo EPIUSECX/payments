@@ -14,7 +14,7 @@ class YocoSettings(Document):
         create_payment_gateway(
             "Yoco-" + self.name,
             settings="Yoco Settings",
-            controller="Yoco Settings",
+            controller=self.name,
         )
         call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.name)
 

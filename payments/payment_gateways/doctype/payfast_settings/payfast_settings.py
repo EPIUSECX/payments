@@ -14,7 +14,7 @@ class PayfastSettings(Document):
         create_payment_gateway(
             "Payfast-" + self.name,
             settings="Payfast Settings",
-            controller="Payfast Settings",
+            controller=self.name,
         )
         call_hook_method("payment_gateway_enabled", gateway="Payfast-" + self.name)
 
