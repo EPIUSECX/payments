@@ -18,6 +18,36 @@ class YocoSettings(Document):
         )
         call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.name)
 
+    @frappe.whitelist()
+    def test_connection(self):
+        """Test the connection to the Yoco API."""
+        import requests
+
+        secret_key = self.get_password(fieldname="secret_key", raise_exception=False)
+        if not secret_key:
+            return {"status": "error", "message": "Please set the Secret Key."}
+
+        # Use the correct Yoco API endpoint for testing credentials
+        test_url = "https://payments.yoco.com/api/webhooks" # Correct endpoint for testing
+
+        headers = {
+            "Authorization": f"Bearer {secret_key}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = requests.get(test_url, headers=headers, timeout=10) # Use GET method
+            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+
+            # Assuming a successful response indicates a valid connection
+            return {"status": "success", "message": "Connection successful!"}
+
+        except requests.exceptions.RequestException as e:
+            return {"status": "error", "message": f"Connection failed: {e}"}
+        except Exception as e:
+            return {"status": "error", "message": f"An unexpected error occurred: {e}"}
+
+
     def validate_transaction_currency(self, currency):
         # Yoco primarily supports ZAR
         if currency != "ZAR":
