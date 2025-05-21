@@ -3,6 +3,8 @@
 
 import frappe
 import json
+import hmac
+import hashlib
 
 @frappe.whitelist(allow_guest=True)
 def handle_webhook():
@@ -42,7 +44,7 @@ def handle_webhook():
 
         # Process Yoco webhook events and update payment status
         if event == "charge.succeeded":
-            update_payment_status(data, "Completed")
+            update_payment_status(data, "Paid") # Use "Paid" status for compatibility with Payment Request
         elif event == "charge.failed":
             update_payment_status(data, "Failed")
         elif event == "charge.refunded":

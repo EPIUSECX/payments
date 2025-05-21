@@ -79,11 +79,19 @@ class YocoSettings(Document):
         # Amount should be in cents (for ZAR)
         amount_in_cents = int(kwargs.get("amount") * 100) # Assuming amount is in major unit
 
+        success_url_path = kwargs.get("return_url", "payment-success")
+        query_params = {
+            "doctype": kwargs.get("reference_doctype"),
+            "docname": kwargs.get("reference_docname")
+        }
+        encoded_query_params = urlencode(query_params)
+        full_success_url = f"{get_url(success_url_path)}?{encoded_query_params}"
+
         payload = {
             "amount": amount_in_cents,
             "currency": kwargs.get("currency"), # Should be ZAR based on validation
             "cancelUrl": get_url(kwargs.get("cancel_url", "payment-failed")),
-            "successUrl": get_url(kwargs.get("return_url", "payment-success")), # Use return_url as successUrl
+            "successUrl": full_success_url, # Use return_url as successUrl with doctype and docname
             "failureUrl": get_url(kwargs.get("cancel_url", "payment-failed")), # Use cancel_url as failureUrl
             "metadata": {
                 "reference_doctype": kwargs.get("reference_doctype"),
