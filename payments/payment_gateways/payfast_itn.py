@@ -19,7 +19,13 @@ def handle_itn():
             return
 
         if itn_data.get("payment_status") == "COMPLETE":
-            create_payment_entry_from_itn(itn_data)
+            payment_request_id = itn_data.get("custom_str2")
+            if payment_request_id:
+                payment_request = frappe.get_doc("Payment Request", payment_request_id)
+                sales_invoice_id = payment_request.reference_name
+                if sales_invoice_id:
+                    sales_invoice = frappe.get_doc("Sales Invoice", sales_invoice_id)
+                    sales_invoice.run_method("on_payment_authorized", "Completed")
         else:
             # Log other statuses for now
             frappe.log_error(f"Payfast ITN: Received non-complete status '{itn_data.get('payment_status')}'", "Payfast ITN Info")
@@ -55,62 +61,3 @@ def validate_itn(data):
         
     return True
 
-def create_payment_entry_from_itn(data):
-    """
-    Create and submit a Payment Entry in Frappe based on Payfast ITN data.
-    """
-    reference_doctype = data.get("custom_str1")
-    reference_docname = data.get("custom_str2")
-    payfast_payment_id = data.get("pf_payment_id")
-
-    if not all([reference_doctype, reference_docname, payfast_payment_id]):
-        frappe.log_error("Payfast ITN missing required fields for Payment Entry creation.", "Payfast ITN Error")
-        return
-
-    # Idempotency Check
-    if frappe.db.exists("Payment Entry", {"reference_no": payfast_payment_id, "docstatus": 1}):
-        frappe.log_error(f"Duplicate Payfast ITN received for payment ID: {payfast_payment_id}", "Payfast ITN Info")
-        return
-
-    try:
-        sales_invoice = frappe.get_doc(reference_doctype, reference_docname)
-        
-        payment_gateway_account = frappe.db.get_value(
-            "Payment Gateway Account", {"payment_gateway": "Payfast"}, "payment_account"
-        )
-        
-        if not payment_gateway_account:
-            frappe.log_error("No Payment Account found for Payfast Payment Gateway.", "Payfast Configuration Error")
-            return
-
-        pe = frappe.new_doc("Payment Entry")
-        pe.payment_type = "Receive"
-        pe.mode_of_payment = "Payfast"
-        pe.party_type = "Customer"
-        pe.party = sales_invoice.customer
-        pe.paid_amount = data.get("amount_gross")
-        pe.received_amount = data.get("amount_net")
-        pe.paid_to = payment_gateway_account
-        pe.reference_no = payfast_payment_id
-        pe.reference_date = frappe.utils.nowdate()
-        
-        pe.append("references", {
-            "reference_doctype": reference_doctype,
-            "reference_name": reference_docname,
-            "bill_no": sales_invoice.bill_no,
-            "due_date": sales_invoice.due_date,
-            "total_amount": sales_invoice.grand_total,
-            "outstanding_amount": sales_invoice.outstanding_amount,
-            "allocated_amount": data.get("amount_gross"),
-        })
-
-        pe.insert(ignore_permissions=True)
-        pe.submit()
-
-        frappe.db.commit()
-        frappe.log_error(f"Payfast ITN: Payment Entry {pe.name} created for {reference_doctype} {reference_docname}", "Payfast ITN Success")
-
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Error creating Payment Entry for {reference_doctype} {reference_docname} from Payfast ITN")
-        frappe.db.rollback()
-        raise e

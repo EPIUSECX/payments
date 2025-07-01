@@ -26,7 +26,13 @@ def handle_webhook():
         data = payload.get("data")
 
         if event == "charge.success":
-            create_payment_entry_from_webhook(data)
+            payment_request_id = data.get("metadata", {}).get("reference_docname")
+            if payment_request_id:
+                payment_request = frappe.get_doc("Payment Request", payment_request_id)
+                sales_invoice_id = payment_request.reference_name
+                if sales_invoice_id:
+                    sales_invoice = frappe.get_doc("Sales Invoice", sales_invoice_id)
+                    sales_invoice.run_method("on_payment_authorized", "Completed")
         else:
             frappe.log_error(f"Paystack Webhook: Received unhandled event type '{event}'", "Paystack Webhook Info")
 
@@ -50,63 +56,3 @@ def verify_signature(request_body, paystack_signature, secret_key):
     ).hexdigest()
     return hmac.compare_digest(hashed, paystack_signature)
 
-def create_payment_entry_from_webhook(data):
-    """
-    Create and submit a Payment Entry in Frappe based on Paystack webhook data.
-    """
-    metadata = data.get("metadata", {})
-    reference_doctype = metadata.get("reference_doctype")
-    reference_docname = metadata.get("reference_docname")
-    paystack_reference = data.get("reference")
-
-    if not all([reference_doctype, reference_docname, paystack_reference]):
-        frappe.log_error("Paystack webhook metadata missing required fields for Payment Entry creation.", "Paystack Webhook Error")
-        return
-
-    # Idempotency Check
-    if frappe.db.exists("Payment Entry", {"reference_no": paystack_reference, "docstatus": 1}):
-        frappe.log_error(f"Duplicate Paystack webhook received for reference: {paystack_reference}", "Paystack Webhook Info")
-        return
-
-    try:
-        sales_invoice = frappe.get_doc(reference_doctype, reference_docname)
-        
-        payment_gateway_account = frappe.db.get_value(
-            "Payment Gateway Account", {"payment_gateway": "Paystack"}, "payment_account"
-        )
-        
-        if not payment_gateway_account:
-            frappe.log_error("No Payment Account found for Paystack Payment Gateway.", "Paystack Configuration Error")
-            return
-
-        pe = frappe.new_doc("Payment Entry")
-        pe.payment_type = "Receive"
-        pe.mode_of_payment = "Paystack"
-        pe.party_type = "Customer"
-        pe.party = sales_invoice.customer
-        pe.paid_amount = data.get("amount") / 100  # Paystack sends amount in kobo
-        pe.received_amount = data.get("amount") / 100
-        pe.paid_to = payment_gateway_account
-        pe.reference_no = paystack_reference
-        pe.reference_date = frappe.utils.nowdate()
-        
-        pe.append("references", {
-            "reference_doctype": reference_doctype,
-            "reference_name": reference_docname,
-            "bill_no": sales_invoice.bill_no,
-            "due_date": sales_invoice.due_date,
-            "total_amount": sales_invoice.grand_total,
-            "outstanding_amount": sales_invoice.outstanding_amount,
-            "allocated_amount": data.get("amount") / 100,
-        })
-
-        pe.insert(ignore_permissions=True)
-        pe.submit()
-
-        frappe.db.commit()
-        frappe.log_error(f"Paystack Webhook: Payment Entry {pe.name} created for {reference_doctype} {reference_docname}", "Paystack Webhook Success")
-
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Error creating Payment Entry for {reference_doctype} {reference_docname} from Paystack webhook")
-        frappe.db.rollback()
-        raise e
