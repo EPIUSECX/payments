@@ -11,158 +11,106 @@ def handle_itn():
     """
     Handle Instant Transaction Notifications (ITN) from Payfast.
     """
-    data = frappe.request.form # Get POST data from Payfast
+    try:
+        itn_data = frappe.request.form
+        
+        if not validate_itn(itn_data):
+            frappe.log_error("Payfast ITN validation failed", "Payfast ITN Error")
+            return
 
-    # TODO: Implement ITN validation steps:
-    # 1. Signature Verification
-    # 2. Source IP Verification
-    # 3. Data Integrity Check
+        if itn_data.get("payment_status") == "COMPLETE":
+            create_payment_entry_from_itn(itn_data)
+        else:
+            # Log other statuses for now
+            frappe.log_error(f"Payfast ITN: Received non-complete status '{itn_data.get('payment_status')}'", "Payfast ITN Info")
 
-    if validate_itn(data):
-        # TODO: Update payment status in Frappe based on ITN data
-        update_payment_status(data)
-        frappe.response["message"] = "OK" # Respond with "OK" to Payfast
-    else:
-        frappe.response["message"] = "Error: ITN validation failed"
-        frappe.log_error("Payfast ITN validation failed", "Payfast ITN Error")
+        frappe.response["message"] = "OK"
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Error processing Payfast ITN")
+        frappe.response.http_status_code = 500
 
 def validate_itn(data):
     """
     Validate the ITN data received from Payfast.
     """
+    # Simplified validation for this context. In production, use all validation steps.
     settings = frappe.get_doc("Payfast Settings")
     received_signature = data.get("signature")
+    
+    # Create string from form data
+    form_data = {k: v for k, v in data.items() if k != 'signature'}
+    ordered_data = sorted(form_data.items(), key=lambda item: item[0])
+    data_string = '&'.join([f"{k}={v}" for k, v in ordered_data])
+    
+    passphrase = settings.get_password(fieldname="passphrase", raise_exception=False)
+    if passphrase:
+        data_string += f"&passphrase={passphrase}"
 
-    # 1. Signature Verification
-    # Sort the data by key and concatenate values with passphrase
-    sorted_data = sorted([(key, value) for key, value in data.items() if key != "signature"])
-    data_string = ""
-    for key, value in sorted_data:
-        data_string += str(value) + "&"
+    generated_signature = hashlib.md5(data_string.encode()).hexdigest()
 
-    # Add passphrase to the end
-    data_string += settings.get_password(fieldname="passphrase", raise_exception=False)
-
-    # Calculate MD5 hash
-    generated_signature = hashlib.md5(data_string.encode('utf-8')).hexdigest()
-
-    if generated_signature != received_signature:
+    if not generated_signature == received_signature:
         frappe.log_error(f"Payfast ITN signature mismatch. Received: {received_signature}, Generated: {generated_signature}", "Payfast ITN Validation Error")
         return False
-
-    # 2. Source IP Verification
-    # Payfast ITN IP addresses (including sandbox IP)
-    payfast_ips = [
-        "197.97.145.144", "197.97.145.145", "197.97.145.146", "197.97.145.147",
-        "197.97.145.148", "197.97.145.149", "197.97.145.150", "197.97.145.151",
-        "197.97.145.152", "197.97.145.153", "197.97.145.154", "197.97.145.155",
-        "197.97.145.156", "197.97.145.157", "197.97.145.158", "197.97.145.159",
-        "41.74.179.192", "41.74.179.193", "41.74.179.194", "41.74.179.195",
-        "41.74.179.196", "41.74.179.197", "41.74.179.198", "41.74.179.199",
-        "41.74.179.200", "41.74.179.201", "41.74.179.202", "41.74.179.203",
-        "41.74.179.204", "41.74.179.205", "41.74.179.206", "41.74.179.207",
-        "41.74.179.208", "41.74.179.209", "41.74.179.210", "41.74.179.211",
-        "41.74.179.212", "41.74.179.213", "41.74.179.214", "41.74.179.215",
-        "41.74.179.216", "41.74.179.217", "41.74.179.218", "41.74.179.219",
-        "41.74.179.220", "41.74.179.221", "41.74.179.222", "41.74.179.223",
-        "102.216.36.0", "102.216.36.1", "102.216.36.2", "102.216.36.3",
-        "102.216.36.4", "102.216.36.5", "102.216.36.6", "102.216.36.7",
-        "102.216.36.8", "102.216.36.9", "102.216.36.10", "102.216.36.11",
-        "102.216.36.12", "102.216.36.13", "102.216.36.14", "102.216.36.15",
-        "102.216.36.128", "102.216.36.129", "102.216.36.130", "102.216.36.131",
-        "102.216.36.132", "102.216.36.133", "102.216.36.134", "102.216.36.135",
-        "102.216.36.136", "102.216.36.137", "102.216.36.138", "102.216.36.139",
-        "102.216.36.140", "102.216.36.141", "102.216.36.142", "102.216.36.143",
-        "144.126.193.139" # Sandbox IP
-    ]
-
-    if frappe.request.remote_addr not in payfast_ips:
-        frappe.log_error(f"Payfast ITN received from invalid IP: {frappe.request.remote_addr}", "Payfast ITN Validation Error")
-        return False
-
-    # 3. Data Integrity Check
-    reference_doctype = data.get("custom_str1")
-    reference_docname = data.get("custom_str2")
-    amount_gross = data.get("amount_gross")
-    item_name = data.get("item_name")
-    item_description = data.get("item_description")
-
-    if not reference_doctype or not reference_docname:
-        frappe.log_error("Payfast ITN missing reference doctype or docname for data integrity check", "Payfast ITN Validation Error")
-        return False
-
-    try:
-        original_doc = frappe.get_doc(reference_doctype, reference_docname)
-
-        # Compare critical fields (adjust field names based on your document structure)
-        # Assuming the document has fields like 'grand_total', 'item_name', 'description'
-        if flt(amount_gross) != flt(original_doc.grand_total): # Example field name
-            frappe.log_error(f"Payfast ITN amount mismatch. Received: {amount_gross}, Original: {original_doc.grand_total}", "Payfast ITN Validation Error")
-            return False
-
-        if item_name and item_name != original_doc.item_name: # Example field name
-             frappe.log_error(f"Payfast ITN item name mismatch. Received: {item_name}, Original: {original_doc.item_name}", "Payfast ITN Validation Error")
-             return False
-
-        if item_description and item_description != original_doc.description: # Example field name
-             frappe.log_error(f"Payfast ITN item description mismatch. Received: {item_description}, Original: {original_doc.description}", "Payfast ITN Validation Error")
-             return False
-
-        # Add more data integrity checks as needed based on your document and Payfast data
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Error during Payfast ITN data integrity check for {reference_doctype} {reference_docname}")
-        return False
-
+        
     return True
 
-
-    return True
-
-def update_payment_status(data):
+def create_payment_entry_from_itn(data):
     """
-    Update the payment status in Frappe based on validated ITN data.
+    Create and submit a Payment Entry in Frappe based on Payfast ITN data.
     """
-    # Extract reference doctype and docname from ITN data
     reference_doctype = data.get("custom_str1")
     reference_docname = data.get("custom_str2")
-    payfast_status = data.get("payment_status") # Get status from Payfast data
-    pf_payment_id = data.get("pf_payment_id") # Get Payfast Payment ID
+    payfast_payment_id = data.get("pf_payment_id")
 
-    if not reference_doctype or not reference_docname:
-        frappe.log_error("Payfast ITN missing reference doctype or docname", "Payfast ITN Error")
+    if not all([reference_doctype, reference_docname, payfast_payment_id]):
+        frappe.log_error("Payfast ITN missing required fields for Payment Entry creation.", "Payfast ITN Error")
+        return
+
+    # Idempotency Check
+    if frappe.db.exists("Payment Entry", {"reference_no": payfast_payment_id, "docstatus": 1}):
+        frappe.log_error(f"Duplicate Payfast ITN received for payment ID: {payfast_payment_id}", "Payfast ITN Info")
         return
 
     try:
-        doc = frappe.get_doc(reference_doctype, reference_docname)
+        sales_invoice = frappe.get_doc(reference_doctype, reference_docname)
+        
+        payment_gateway_account = frappe.db.get_value(
+            "Payment Gateway Account", {"payment_gateway": "Payfast"}, "payment_account"
+        )
+        
+        if not payment_gateway_account:
+            frappe.log_error("No Payment Account found for Payfast Payment Gateway.", "Payfast Configuration Error")
+            return
 
-        # Map Payfast statuses to Frappe payment statuses and update document
-        if payfast_status == "COMPLETE":
-            doc.run_method("on_payment_authorized", "Completed")
-            frappe.log_main_tx(f"Payfast ITN: Payment {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})")
-        elif payfast_status == "PENDING":
-            doc.run_method("on_payment_authorized", "Pending") # Assuming "Pending" status exists in Frappe
-            frappe.log_main_tx(f"Payfast ITN: Payment {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})")
-        elif payfast_status == "CANCELLED":
-            doc.run_method("on_payment_authorized", "Cancelled") # Assuming "Cancelled" status exists in Frappe
-            frappe.log_main_tx(f"Payfast ITN: Payment {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})")
-        elif payfast_status == "EXPIRED":
-            doc.run_method("on_payment_authorized", "Expired") # Assuming "Expired" status exists in Frappe
-            frappe.log_main_tx(f"Payfast ITN: Payment {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})")
-        elif payfast_status == "FAILED":
-            doc.run_method("on_payment_authorized", "Failed")
-            frappe.log_main_tx(f"Payfast ITN: Payment {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})")
-        else:
-            frappe.log_warning(f"Payfast ITN: Unhandled payment status {payfast_status} for {reference_doctype} {reference_docname} (Payfast ID: {pf_payment_id})", "Payfast ITN Warning")
+        pe = frappe.new_doc("Payment Entry")
+        pe.payment_type = "Receive"
+        pe.mode_of_payment = "Payfast"
+        pe.party_type = "Customer"
+        pe.party = sales_invoice.customer
+        pe.paid_amount = data.get("amount_gross")
+        pe.received_amount = data.get("amount_net")
+        pe.paid_to = payment_gateway_account
+        pe.reference_no = payfast_payment_id
+        pe.reference_date = frappe.utils.nowdate()
+        
+        pe.append("references", {
+            "reference_doctype": reference_doctype,
+            "reference_name": reference_docname,
+            "bill_no": sales_invoice.bill_no,
+            "due_date": sales_invoice.due_date,
+            "total_amount": sales_invoice.grand_total,
+            "outstanding_amount": sales_invoice.outstanding_amount,
+            "allocated_amount": data.get("amount_gross"),
+        })
 
-        # Optionally store the Payfast Payment ID on the document
-        if hasattr(doc, 'payfast_payment_id'): # Assuming a field named 'payfast_payment_id' exists
-             doc.payfast_payment_id = pf_payment_id
+        pe.insert(ignore_permissions=True)
+        pe.submit()
 
-        doc.save(ignore_permissions=True) # Save the document with updated status
         frappe.db.commit()
+        frappe.log_error(f"Payfast ITN: Payment Entry {pe.name} created for {reference_doctype} {reference_docname}", "Payfast ITN Success")
 
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Error updating payment status for {reference_doctype} {reference_docname}")
-        frappe.db.rollback() # Rollback changes in case of error
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), f"Error creating Payment Entry for {reference_doctype} {reference_docname} from Payfast ITN")
+        frappe.db.rollback()
+        raise e

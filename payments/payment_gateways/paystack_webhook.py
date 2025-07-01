@@ -11,56 +11,24 @@ def handle_webhook():
     """
     Handle webhook notifications from Paystack.
     """
+    request_body = frappe.request.data
+    paystack_signature = frappe.request.headers.get("x-paystack-signature")
     settings = frappe.get_doc("Paystack Settings")
     secret_key = settings.get_password(fieldname="secret_key", raise_exception=False)
-    request_body = frappe.request.data # Get raw POST data
-    paystack_signature = frappe.request.headers.get("x-paystack-signature")
 
-    # TODO: Implement IP whitelisting for Paystack webhooks
-    # Get official Paystack webhook IP addresses and verify request origin
-    # Example:
-    # paystack_webhook_ips = ["xxx.xxx.xxx.xxx", "yyy.yyy.yyy.yyy"] # Replace with actual IPs
-    # if frappe.request.remote_addr not in paystack_webhook_ips:
-    #     frappe.log_error(f"Paystack webhook received from invalid IP: {frappe.request.remote_addr}", "Paystack Webhook Error")
-    #     frappe.throw("Invalid source IP", frappe.PermissionError)
-    frappe.log_warning("Paystack webhook IP verification skipped. TODO: Implement IP verification.", "Paystack Webhook Warning")
-
-
-    # 1. Verify webhook signature
     if not verify_signature(request_body, paystack_signature, secret_key):
         frappe.log_error("Paystack webhook signature verification failed", "Paystack Webhook Error")
         frappe.throw("Invalid signature", frappe.PermissionError)
 
-    # 2. Process webhook event
     try:
         payload = json.loads(request_body)
         event = payload.get("event")
         data = payload.get("data")
 
         if event == "charge.success":
-            update_payment_status(data, "Completed")
-        elif event == "charge.failed":
-            update_payment_status(data, "Failed")
-        elif event == "transfer.success":
-            # TODO: Implement handling for successful transfers
-            frappe.log_main_tx(f"Paystack Webhook: Transfer successful for reference {data.get('reference')}")
-        elif event == "transfer.failed":
-            # TODO: Implement handling for failed transfers
-            frappe.log_main_tx(f"Paystack Webhook: Transfer failed for reference {data.get('reference')}")
-        elif event == "subscription.create":
-            # TODO: Implement handling for subscription creation
-            frappe.log_main_tx(f"Paystack Webhook: Subscription created for customer {data.get('customer', {}).get('customer_code')}")
-        elif event == "invoice.create":
-            # TODO: Implement handling for invoice creation
-            frappe.log_main_tx(f"Paystack Webhook: Invoice created for customer {data.get('customer', {}).get('customer_code')}")
-        elif event == "invoice.payment_failed":
-            # TODO: Implement handling for failed invoice payments
-            update_payment_status(data, "Failed") # Assuming failed invoice payment maps to Failed status
-        elif event == "invoice.payment_successful":
-            # TODO: Implement handling for successful invoice payments
-            update_payment_status(data, "Completed") # Assuming successful invoice payment maps to Completed status
+            create_payment_entry_from_webhook(data)
         else:
-            frappe.log_warning(f"Paystack Webhook: Unhandled event type: {event}", "Paystack Webhook Warning")
+            frappe.log_error(f"Paystack Webhook: Received unhandled event type '{event}'", "Paystack Webhook Info")
 
         frappe.response["message"] = "Webhook received successfully"
 
@@ -71,54 +39,74 @@ def handle_webhook():
         frappe.log_error(frappe.get_traceback(), "Error processing Paystack webhook")
         frappe.throw("Error processing webhook", frappe.ValidationError)
 
-
 def verify_signature(request_body, paystack_signature, secret_key):
     """
     Verify the Paystack webhook signature.
     """
-    # Calculate the HMAC SHA512 signature
     hashed = hmac.new(
         secret_key.encode('utf-8'),
         request_body,
         hashlib.sha512
     ).hexdigest()
-
-    # Compare the calculated signature with the received signature
     return hmac.compare_digest(hashed, paystack_signature)
 
-
-def update_payment_status(data, status):
+def create_payment_entry_from_webhook(data):
     """
-    Update the payment status in Frappe based on Paystack webhook data.
+    Create and submit a Payment Entry in Frappe based on Paystack webhook data.
     """
-    # Extract reference details from metadata
-    metadata = data.get("metadata")
-    if not metadata:
-        frappe.log_error("Paystack webhook data missing metadata", "Paystack Webhook Error")
-        return
-
+    metadata = data.get("metadata", {})
     reference_doctype = metadata.get("reference_doctype")
     reference_docname = metadata.get("reference_docname")
-    paystack_reference = data.get("reference") # Paystack transaction reference
+    paystack_reference = data.get("reference")
 
-    if not reference_doctype or not reference_docname:
-        frappe.log_error("Paystack webhook metadata missing reference doctype or docname", "Paystack Webhook Error")
+    if not all([reference_doctype, reference_docname, paystack_reference]):
+        frappe.log_error("Paystack webhook metadata missing required fields for Payment Entry creation.", "Paystack Webhook Error")
+        return
+
+    # Idempotency Check
+    if frappe.db.exists("Payment Entry", {"reference_no": paystack_reference, "docstatus": 1}):
+        frappe.log_error(f"Duplicate Paystack webhook received for reference: {paystack_reference}", "Paystack Webhook Info")
         return
 
     try:
-        doc = frappe.get_doc(reference_doctype, reference_docname)
+        sales_invoice = frappe.get_doc(reference_doctype, reference_docname)
+        
+        payment_gateway_account = frappe.db.get_value(
+            "Payment Gateway Account", {"payment_gateway": "Paystack"}, "payment_account"
+        )
+        
+        if not payment_gateway_account:
+            frappe.log_error("No Payment Account found for Paystack Payment Gateway.", "Paystack Configuration Error")
+            return
 
-        # Update document status
-        doc.run_method("on_payment_authorized", status) # Call the hook on the document
+        pe = frappe.new_doc("Payment Entry")
+        pe.payment_type = "Receive"
+        pe.mode_of_payment = "Paystack"
+        pe.party_type = "Customer"
+        pe.party = sales_invoice.customer
+        pe.paid_amount = data.get("amount") / 100  # Paystack sends amount in kobo
+        pe.received_amount = data.get("amount") / 100
+        pe.paid_to = payment_gateway_account
+        pe.reference_no = paystack_reference
+        pe.reference_date = frappe.utils.nowdate()
+        
+        pe.append("references", {
+            "reference_doctype": reference_doctype,
+            "reference_name": reference_docname,
+            "bill_no": sales_invoice.bill_no,
+            "due_date": sales_invoice.due_date,
+            "total_amount": sales_invoice.grand_total,
+            "outstanding_amount": sales_invoice.outstanding_amount,
+            "allocated_amount": data.get("amount") / 100,
+        })
 
-        # Optionally store Paystack reference on the document
-        if hasattr(doc, 'paystack_reference'): # Assuming a field named 'paystack_reference' exists
-             doc.paystack_reference = paystack_reference
+        pe.insert(ignore_permissions=True)
+        pe.submit()
 
-        doc.save(ignore_permissions=True) # Save the document with updated status
         frappe.db.commit()
-        frappe.log_main_tx(f"Paystack Webhook: Payment {status} for {reference_doctype} {reference_docname} (Paystack Ref: {paystack_reference})")
+        frappe.log_error(f"Paystack Webhook: Payment Entry {pe.name} created for {reference_doctype} {reference_docname}", "Paystack Webhook Success")
 
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Error updating payment status for {reference_doctype} {reference_docname} from Paystack webhook")
-        frappe.db.rollback() # Rollback changes in case of error
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), f"Error creating Payment Entry for {reference_doctype} {reference_docname} from Paystack webhook")
+        frappe.db.rollback()
+        raise e

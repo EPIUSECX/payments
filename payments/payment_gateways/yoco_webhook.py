@@ -10,46 +10,27 @@ import hashlib
 def handle_webhook():
     """
     Handle webhook notifications from Yoco.
+    This is the single entry point for all Yoco webhooks.
     """
-    request_body = frappe.request.data # Get raw POST data
+    request_body = frappe.request.data
     yoco_signature = frappe.request.headers.get("X-Yoco-Signature")
     settings = frappe.get_doc("Yoco Settings")
-    webhook_secret = settings.get_password(fieldname="webhook_secret", raise_exception=False) # Assuming a 'webhook_secret' field in Yoco Settings
+    webhook_secret = settings.get_password(fieldname="webhook_secret", raise_exception=False)
 
-    # Implement Yoco webhook signature verification
-    if not yoco_signature:
-        frappe.log_error("Yoco webhook received without signature", "Yoco Webhook Error")
-        frappe.throw("Signature missing", frappe.PermissionError)
-
-    # Concatenate raw request body with webhook secret
-    signed_payload = request_body + webhook_secret.encode('utf-8')
-
-    # Compute the SHA256 HMAC
-    generated_signature = hmac.new(
-        webhook_secret.encode('utf-8'),
-        request_body,
-        hashlib.sha256
-    ).hexdigest()
-
-    # Compare the generated signature with the received signature
-    if not hmac.compare_digest(generated_signature, yoco_signature):
-        frappe.log_error(f"Yoco webhook signature verification failed. Received: {yoco_signature}, Generated: {generated_signature}", "Yoco Webhook Error")
+    if not verify_signature(request_body, yoco_signature, webhook_secret):
+        frappe.log_error("Yoco webhook signature verification failed", "Yoco Webhook Error")
         frappe.throw("Invalid signature", frappe.PermissionError)
-
 
     try:
         payload = json.loads(request_body)
-        event = payload.get("type") # Yoco uses 'type' for event type
-        data = payload.get("data")
+        event_type = payload.get("type")
+        data = payload.get("data", {}).get("object", {})
 
-        # Process Yoco webhook events and update payment status
-        if event == "charge.succeeded":
-            update_payment_status(data, "Paid") # Use "Paid" status for compatibility with Payment Request
-        elif event == "charge.failed":
-            update_payment_status(data, "Failed")
-        elif event == "charge.refunded":
-            update_payment_status(data, "Refunded") # Assuming "Refunded" status exists in Frappe
-        # TODO: Handle other relevant Yoco webhook events if necessary
+        if event_type == "charge.succeeded":
+            create_payment_entry_from_webhook(data)
+        else:
+            # Log other events for now, can be handled later
+            frappe.log_error(f"Yoco Webhook: Received unhandled event type '{event_type}'", "Yoco Webhook Info")
 
         frappe.response["message"] = "Webhook received successfully"
 
@@ -60,39 +41,76 @@ def handle_webhook():
         frappe.log_error(frappe.get_traceback(), "Error processing Yoco webhook")
         frappe.throw("Error processing webhook", frappe.ValidationError)
 
+def verify_signature(request_body, signature, secret):
+    """Verify the signature of the incoming webhook."""
+    if not signature:
+        return False
+    
+    generated_signature = hmac.new(
+        secret.encode('utf-8'),
+        request_body,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(generated_signature, signature)
 
-def update_payment_status(data, status):
+def create_payment_entry_from_webhook(data):
     """
-    Update the payment status in Frappe based on Yoco webhook data.
+    Create and submit a Payment Entry in Frappe based on Yoco webhook data.
     """
-    # Extract reference details from Yoco webhook data (from metadata)
-    metadata = data.get("metadata")
-    if not metadata:
-        frappe.log_error("Yoco webhook data missing metadata for status update", "Yoco Webhook Error")
-        return
-
+    metadata = data.get("metadata", {})
     reference_doctype = metadata.get("reference_doctype")
     reference_docname = metadata.get("reference_docname")
-    yoco_charge_id = data.get("id") # Yoco Charge ID
+    yoco_charge_id = data.get("id")
 
-    if not reference_doctype or not reference_docname:
-        frappe.log_error("Yoco webhook metadata missing reference doctype or docname for status update", "Yoco Webhook Error")
+    if not all([reference_doctype, reference_docname, yoco_charge_id]):
+        frappe.log_error("Yoco webhook metadata missing required fields for Payment Entry creation.", "Yoco Webhook Error")
+        return
+
+    # Idempotency Check: Ensure we don't process the same charge twice
+    if frappe.db.exists("Payment Entry", {"reference_no": yoco_charge_id, "docstatus": 1}):
+        frappe.log_error(f"Duplicate Yoco webhook received for charge ID: {yoco_charge_id}", "Yoco Webhook Info")
         return
 
     try:
-        doc = frappe.get_doc(reference_doctype, reference_docname)
+        sales_invoice = frappe.get_doc(reference_doctype, reference_docname)
+        
+        payment_gateway_account = frappe.db.get_value(
+            "Payment Gateway Account", {"payment_gateway": "Yoco"}, "payment_account"
+        )
+        
+        if not payment_gateway_account:
+            frappe.log_error("No Payment Account found for Yoco Payment Gateway.", "Yoco Configuration Error")
+            return
 
-        # Update document status
-        doc.run_method("on_payment_authorized", status) # Call the hook on the document
+        pe = frappe.new_doc("Payment Entry")
+        pe.payment_type = "Receive"
+        pe.mode_of_payment = "Yoco"
+        pe.party_type = "Customer"
+        pe.party = sales_invoice.customer
+        pe.paid_amount = data.get("amount") / 100  # Yoco sends amount in cents
+        pe.received_amount = data.get("amount") / 100
+        pe.paid_to = payment_gateway_account
+        pe.reference_no = yoco_charge_id
+        pe.reference_date = frappe.utils.nowdate()
+        
+        pe.append("references", {
+            "reference_doctype": reference_doctype,
+            "reference_name": reference_docname,
+            "bill_no": sales_invoice.bill_no,
+            "due_date": sales_invoice.due_date,
+            "total_amount": sales_invoice.grand_total,
+            "outstanding_amount": sales_invoice.outstanding_amount,
+            "allocated_amount": data.get("amount") / 100,
+        })
 
-        # Optionally store Yoco Charge ID on the document
-        if hasattr(doc, 'yoco_charge_id'): # Assuming a field named 'yoco_charge_id' exists
-             doc.yoco_charge_id = yoco_charge_id
+        pe.insert(ignore_permissions=True)
+        pe.submit()
 
-        doc.save(ignore_permissions=True) # Save the document with updated status
         frappe.db.commit()
-        frappe.log_main_tx(f"Yoco Webhook: Payment {status} for {reference_doctype} {reference_docname} (Yoco ID: {yoco_charge_id})")
+        frappe.log_error(f"Yoco Webhook: Payment Entry {pe.name} created for {reference_doctype} {reference_docname}", "Yoco Webhook Success")
 
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Error updating payment status for {reference_doctype} {reference_docname} from Yoco webhook")
-        frappe.db.rollback() # Rollback changes in case of error
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), f"Error creating Payment Entry for {reference_doctype} {reference_docname} from Yoco webhook")
+        frappe.db.rollback()
+        raise e
