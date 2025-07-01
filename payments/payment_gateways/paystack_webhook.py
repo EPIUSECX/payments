@@ -28,11 +28,8 @@ def handle_webhook():
         if event == "charge.success":
             payment_request_id = data.get("metadata", {}).get("reference_docname")
             if payment_request_id:
-                payment_request = frappe.get_doc("Payment Request", payment_request_id)
-                sales_invoice_id = payment_request.reference_name
-                if sales_invoice_id:
-                    sales_invoice = frappe.get_doc("Sales Invoice", sales_invoice_id)
-                    sales_invoice.run_method("on_payment_authorized", "Completed")
+                pr = frappe.get_doc("Payment Request", payment_request_id)
+                pr.run_method("set_as_paid")
         else:
             frappe.log_error(f"Paystack Webhook: Received unhandled event type '{event}'", "Paystack Webhook Info")
 

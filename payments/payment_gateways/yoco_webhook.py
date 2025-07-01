@@ -41,11 +41,8 @@ def handle_webhook():
         if event_type == "charge.succeeded":
             payment_request_id = data.get("metadata", {}).get("reference_docname")
             if payment_request_id:
-                payment_request = frappe.get_doc("Payment Request", payment_request_id)
-                sales_invoice_id = payment_request.reference_name
-                if sales_invoice_id:
-                    sales_invoice = frappe.get_doc("Sales Invoice", sales_invoice_id)
-                    sales_invoice.run_method("on_payment_authorized", "Completed")
+                pr = frappe.get_doc("Payment Request", payment_request_id)
+                pr.run_method("set_as_paid")
         else:
             # Log other events for now, can be handled later
             frappe.log_error(f"Yoco Webhook: Received unhandled event type '{event_type}'", "Yoco Webhook Info")

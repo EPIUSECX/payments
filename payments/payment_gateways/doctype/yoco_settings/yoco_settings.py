@@ -67,6 +67,11 @@ class YocoSettings(Document):
         import requests
         from frappe.integrations.utils import create_request_log
 
+        # Get the reference document and submit it if it's a draft
+        ref_doc = frappe.get_doc(kwargs.get("reference_doctype"), kwargs.get("reference_docname"))
+        if ref_doc.docstatus == 0:
+            ref_doc.submit()
+ 
         # Yoco Checkout API endpoint for creating checkout sessions
         yoco_checkout_url = "https://payments.yoco.com/api/checkouts"
 

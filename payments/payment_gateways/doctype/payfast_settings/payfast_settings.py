@@ -30,6 +30,11 @@ class PayfastSettings(Document):
             frappe.throw(_("For currency {0}, the minimum transaction amount should be {1}").format(currency, minimum_amount))
 
     def get_payment_url(self, **kwargs):
+        # Get the reference document and submit it if it's a draft
+        ref_doc = frappe.get_doc(kwargs.get("reference_doctype"), kwargs.get("reference_docname"))
+        if ref_doc.docstatus == 0:
+            ref_doc.submit()
+
         payfast_url = "https://www.payfast.co.za/eng/process"
         if self.sandbox_mode:
             payfast_url = "https://sandbox.payfast.co.za/eng/process"
