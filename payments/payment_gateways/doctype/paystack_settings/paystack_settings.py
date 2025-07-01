@@ -57,19 +57,16 @@ class PaystackSettings(Document):
             frappe.throw(f"The minimum transaction amount for {currency} is {minimum_amounts_subunit[currency]/100:.2f}.")
 
     def get_payment_url(self, **kwargs):
-        # TODO: Implement URL generation or payment initiation based on Paystack documentation
-        pass
+        from frappe.integrations.utils import create_request_log
+
+        integration_request = create_request_log(kwargs, service_name="Paystack")
+        return get_url(f"./paystack_checkout?token={integration_request.name}")
 
     def create_request(self, data):
         import requests
         from frappe.integrations.utils import create_request_log
  
         self.data = frappe._dict(data)
-
-        # Get the reference document and submit it if it's a draft
-        ref_doc = frappe.get_doc(self.data.reference_doctype, self.data.reference_docname)
-        if ref_doc.docstatus == 0:
-            ref_doc.submit()
  
         # TODO: Confirm Paystack API endpoint for initializing transactions
         paystack_url = "https://api.paystack.co/transaction/initialize"

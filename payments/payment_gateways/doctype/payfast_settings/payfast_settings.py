@@ -30,40 +30,10 @@ class PayfastSettings(Document):
             frappe.throw(_("For currency {0}, the minimum transaction amount should be {1}").format(currency, minimum_amount))
 
     def get_payment_url(self, **kwargs):
-        # Get the reference document and submit it if it's a draft
-        ref_doc = frappe.get_doc(kwargs.get("reference_doctype"), kwargs.get("reference_docname"))
-        if ref_doc.docstatus == 0:
-            ref_doc.submit()
+        from frappe.integrations.utils import create_request_log
 
-        payfast_url = "https://www.payfast.co.za/eng/process"
-        if self.sandbox_mode:
-            payfast_url = "https://sandbox.payfast.co.za/eng/process"
-
-        # Construct parameters for Payfast based on documentation
-        params = {
-            "merchant_id": self.merchant_id,
-            "merchant_key": self.merchant_key,
-            "amount": kwargs.get("amount"),
-            "item_name": kwargs.get("item_name"),
-            "item_description": kwargs.get("item_description"),
-            "return_url": get_url(kwargs.get("return_url")),
-            "cancel_url": get_url(kwargs.get("cancel_url")),
-            "notify_url": get_url(kwargs.get("notify_url")),
-            "email_confirmation": 1, # As per documentation
-            "confirmation_address": kwargs.get("payer_email"), # Use payer_email for confirmation address
-            # Custom fields to pass reference doctype and docname
-            "custom_str1": kwargs.get("reference_doctype"),
-            "custom_str2": kwargs.get("reference_docname"),
-            # Add other relevant parameters from kwargs if needed
-            "name_first": kwargs.get("payer_name").split(" ")[0] if kwargs.get("payer_name") else None,
-            "name_last": " ".join(kwargs.get("payer_name").split(" ")[1:]) if kwargs.get("payer_name") and len(kwargs.get("payer_name").split(" ")) > 1 else None,
-            "email_address": kwargs.get("payer_email"),
-        }
-
-        # Remove None values
-        params = {k: v for k, v in params.items() if v is not None}
-
-        return f"{payfast_url}?{urlencode(params)}"
+        integration_request = create_request_log(kwargs, service_name="Payfast")
+        return get_url(f"./payfast_checkout?token={integration_request.name}")
 
     def create_request(self, data):
         from frappe.integrations.utils import create_request_log

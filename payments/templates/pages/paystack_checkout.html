@@ -1,0 +1,31 @@
+{% extends "templates/web.html" %}
+
+{% block title %} Paystack Payment {% endblock %}
+
+{%- block header -%}{% endblock %}
+
+{% block script %}
+<script>
+window.csrf_token = "{{ csrf_token }}";
+</script>
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>{% include "payments/templates/includes/paystack_checkout.js" %}</script>
+{% endblock %}
+
+{%- block page_content -%}
+
+<p class='lead text-center centered'>
+	<span class='paystack-loading'>Loading Payment System</span>
+	<span class='paystack-confirming hidden'>Confirming Payment</span>
+</p>
+
+{% endblock %}
+
+{% block style %}
+<style>
+	header, footer {
+		display: none;
+	}
+
+</style>
+{% endblock %}

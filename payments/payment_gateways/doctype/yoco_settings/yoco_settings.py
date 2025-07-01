@@ -64,81 +64,10 @@ class YocoSettings(Document):
             frappe.throw(_("For currency {0}, the minimum transaction amount should be {1}").format(currency, minimum_amount_cents / 100.0))
 
     def get_payment_url(self, **kwargs):
-        import requests
         from frappe.integrations.utils import create_request_log
 
-        # Get the reference document and submit it if it's a draft
-        ref_doc = frappe.get_doc(kwargs.get("reference_doctype"), kwargs.get("reference_docname"))
-        if ref_doc.docstatus == 0:
-            ref_doc.submit()
- 
-        # Yoco Checkout API endpoint for creating checkout sessions
-        yoco_checkout_url = "https://payments.yoco.com/api/checkouts"
-
-        headers = {
-            "Authorization": f"Bearer {self.get_password(fieldname='secret_key', raise_exception=False)}",
-            "Content-Type": "application/json"
-        }
-
-        # Prepare data for Yoco Checkout API call
-        # Amount should be in cents (for ZAR)
-        amount_in_cents = int(kwargs.get("amount") * 100) # Assuming amount is in major unit
-
-        success_url_path = kwargs.get("return_url", "payment-success")
-        query_params = {
-            "doctype": kwargs.get("reference_doctype"),
-            "docname": kwargs.get("reference_docname")
-        }
-        encoded_query_params = urlencode(query_params)
-        full_success_url = f"{get_url(success_url_path)}?{encoded_query_params}"
-
-        payload = {
-            "amount": amount_in_cents,
-            "currency": kwargs.get("currency"), # Should be ZAR based on validation
-            "cancelUrl": get_url(kwargs.get("cancel_url", "payment-failed")),
-            "successUrl": full_success_url, # Use return_url as successUrl with doctype and docname
-            "failureUrl": get_url(kwargs.get("cancel_url", "payment-failed")), # Use cancel_url as failureUrl
-            "metadata": {
-                "reference_doctype": kwargs.get("reference_doctype"),
-                "reference_docname": kwargs.get("reference_docname"),
-                "payer_name": kwargs.get("payer_name"),
-                "payer_email": kwargs.get("payer_email"),
-                "item_name": kwargs.get("item_name"),
-                "item_description": kwargs.get("item_description"),
-                # Add other relevant data from kwargs if needed
-            },
-            # Add other required parameters based on Yoco documentation
-        }
-
-        try:
-            # Log the request to the Checkout API
-            create_request_log(payload, service_name="Yoco Checkout", url=yoco_checkout_url)
-            response = requests.post(yoco_checkout_url, headers=headers, json=payload)
-            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-            response_json = response.json()
-
-            # According to the logged response, Yoco returns redirectUrl directly
-            # and a status like "created" if successful.
-            # There isn't a top-level "success": true key.
-            redirect_url = response_json.get("redirectUrl")
-            yoco_status = response_json.get("status")
-
-            if redirect_url and yoco_status == "created":
-                return redirect_url
-            else:
-                error_detail = f"Yoco checkout session creation did not return a valid redirectUrl or status. Status: {yoco_status}, Redirect URL: {redirect_url}. Full Response: {response_json}"
-                frappe.log_error(error_detail, "Yoco Integration Error")
-                return get_url(kwargs.get("cancel_url", "payment-failed"))
-
-        except requests.exceptions.RequestException as e:
-            error_message = f"Yoco Checkout Request Error: {str(e)}"
-            if e.response is not None:
-                error_message += f" | Response Status: {e.response.status_code} | Response Text: {e.response.text}"
-            frappe.log_error(f"{error_message}\n{frappe.get_traceback()}", "Yoco Checkout Request Error")
-            return get_url(kwargs.get("cancel_url", "payment-failed")) # Redirect to failure page on error
-        except Exception as e: # Catching generic Exception to log it more verbosely
-            frappe.log_error(f"Unexpected Yoco Integration Error: {str(e)}\n{frappe.get_traceback()}", "Yoco Integration Error")
-            return get_url(kwargs.get("cancel_url", "payment-failed")) # Redirect to failure page on error
+        integration_request = create_request_log(kwargs, service_name="Yoco")
+        return get_url(f"./yoco_checkout?token={integration_request.name}")
 
 
     def create_request(self, data):

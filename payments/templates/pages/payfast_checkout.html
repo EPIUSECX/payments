@@ -1,0 +1,32 @@
+{% extends "templates/web.html" %}
+
+{% block title %} Payfast Payment {% endblock %}
+
+{%- block header -%}{% endblock %}
+
+{% block script %}
+<script>
+window.csrf_token = "{{ csrf_token }}";
+</script>
+<script>{% include "payments/templates/includes/payfast_checkout.js" %}</script>
+{% endblock %}
+
+{%- block page_content -%}
+
+<p class='lead text-center centered'>
+	<span class='payfast-loading'>Loading Payment System</span>
+	<span class='payfast-confirming hidden'>Confirming Payment</span>
+</p>
+
+<div id="payfast-form-container"></div>
+
+{% endblock %}
+
+{% block style %}
+<style>
+	header, footer {
+		display: none;
+	}
+
+</style>
+{% endblock %}

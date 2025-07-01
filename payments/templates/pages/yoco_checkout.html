@@ -1,0 +1,32 @@
+{% extends "templates/web.html" %}
+
+{% block title %} Yoco Payment {% endblock %}
+
+{%- block header -%}{% endblock %}
+
+{% block script %}
+<script>
+window.csrf_token = "{{ csrf_token }}";
+</script>
+<script src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"></script>
+<script>{% include "payments/templates/includes/yoco_checkout.js" %}</script>
+{% endblock %}
+
+{%- block page_content -%}
+
+<p class='lead text-center centered'>
+	<span class='yoco-loading'>Loading Payment System</span>
+	<span class='yoco-confirming hidden'>Confirming Payment</span>
+</p>
+
+{% endblock %}
+
+{% block style %}
+<style>
+	header, footer {
+		display: none;
+	}
+
+</style>
+
+{% endblock %}
