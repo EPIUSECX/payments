@@ -57,11 +57,13 @@ def get_api_key():
 
 
 @frappe.whitelist(allow_guest=True)
-def get_yoco_payment_id(token):
-	doc = frappe.get_doc("Integration Request", token)
-	payment_details = json.loads(doc.data)
-	
-	controller = frappe.get_doc("Yoco Settings", "Yoco")
-	payment_url = controller.get_payment_url(**payment_details)
+def make_payment(yoco_token, data, reference_doctype, reference_docname):
+	data = json.loads(data)
+	data.update({
+		"yoco_token_id": yoco_token,
+		"reference_doctype": reference_doctype,
+		"reference_docname": reference_docname
+	})
 
-	return payment_url
+	controller = frappe.get_doc("Yoco Settings", "Yoco")
+	return controller.create_request(data)

@@ -57,11 +57,13 @@ def get_api_key():
 
 
 @frappe.whitelist(allow_guest=True)
-def get_paystack_payment_url(token):
-	doc = frappe.get_doc("Integration Request", token)
-	payment_details = json.loads(doc.data)
-	
-	controller = frappe.get_doc("Paystack Settings", "Paystack")
-	payment_url = controller.create_request(payment_details)
+def make_payment(paystack_txn_ref, data, reference_doctype, reference_docname):
+	data = json.loads(data)
+	data.update({
+		"paystack_txn_ref": paystack_txn_ref,
+		"reference_doctype": reference_doctype,
+		"reference_docname": reference_docname
+	})
 
-	return payment_url.get("redirect_to")
+	controller = frappe.get_doc("Paystack Settings", "Paystack")
+	return controller.create_request(data)

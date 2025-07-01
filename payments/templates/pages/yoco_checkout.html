@@ -14,10 +14,9 @@ window.csrf_token = "{{ csrf_token }}";
 
 {%- block page_content -%}
 
-<p class='lead text-center centered'>
-	<span class='yoco-loading'>Loading Payment System</span>
-	<span class='yoco-confirming hidden'>Confirming Payment</span>
-</p>
+<div class="text-center">
+    <button id="yoco-payment-button" class="btn btn-primary">{{ _("Pay Now") }}</button>
+</div>
 
 {% endblock %}
 
