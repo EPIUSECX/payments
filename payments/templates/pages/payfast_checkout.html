@@ -1,6 +1,6 @@
 {% extends "templates/web.html" %}
 
-{% block title %} Payfast Payment {% endblock %}
+{% block title %}{{ _("Payfast Payment") }}{% endblock %}
 
 {%- block header -%}{% endblock %}
 
@@ -12,18 +12,56 @@ window.csrf_token = "{{ csrf_token }}";
 {% endblock %}
 
 {%- block page_content -%}
-
-<div class="text-center">
-    <button id="payfast-payment-button" class="btn btn-primary">{{ _("Pay Now") }}</button>
+<div class="payfast-checkout-container">
+    <div class="payfast-checkout-card">
+        <img src="https://www.payfast.io/wp-content/uploads/2023/03/payfast-logo.svg" alt="Payfast Logo" class="payfast-logo">
+        <div class="transaction-details">
+            <h4>{{ _("Payment for") }} {{ reference_docname }}</h4>
+            <p class="amount">{{ frappe.utils.fmt_money(amount, currency=currency) }}</p>
+        </div>
+        <button id="payfast-payment-button" class="btn btn-primary btn-lg btn-block">{{ _("Pay with Payfast") }}</button>
+        <p class="text-muted small mt-3">{{ _("Secured by Payfast") }}</p>
+    </div>
 </div>
-
 {% endblock %}
 
 {% block style %}
 <style>
-	header, footer {
-		display: none;
-	}
-
+    .payfast-checkout-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f7f7f7;
+    }
+    .payfast-checkout-card {
+        background-color: #fff;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        text-align: center;
+        max-width: 400px;
+        width: 100%;
+    }
+    .payfast-logo {
+        max-width: 200px;
+        margin-bottom: 30px;
+    }
+    .transaction-details h4 {
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .transaction-details .amount {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 30px;
+    }
+    #payfast-payment-button {
+        background-color: #004a99;
+        border-color: #004a99;
+        font-weight: 600;
+        padding: 15px;
+    }
 </style>
 {% endblock %}

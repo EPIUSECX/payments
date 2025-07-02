@@ -1,6 +1,6 @@
 {% extends "templates/web.html" %}
 
-{% block title %} Yoco Payment {% endblock %}
+{% block title %}{{ _("Yoco Payment") }}{% endblock %}
 
 {%- block header -%}{% endblock %}
 
@@ -13,19 +13,56 @@ window.csrf_token = "{{ csrf_token }}";
 {% endblock %}
 
 {%- block page_content -%}
-
-<div class="text-center">
-    <button id="yoco-payment-button" class="btn btn-primary">{{ _("Pay Now") }}</button>
+<div class="yoco-checkout-container">
+    <div class="yoco-checkout-card">
+        <img src="https://developer.yoco.com/img/design-resources/yoco_colour.svg" alt="Yoco Logo" class="yoco-logo">
+        <div class="transaction-details">
+            <h4>{{ _("Payment for") }} {{ reference_docname }}</h4>
+            <p class="amount">{{ frappe.utils.fmt_money(amount, currency=currency) }}</p>
+        </div>
+        <button id="yoco-payment-button" class="btn btn-primary btn-lg btn-block">{{ _("Pay with Yoco") }}</button>
+        <p class="text-muted small mt-3">{{ _("Secured by Yoco") }}</p>
+    </div>
 </div>
-
 {% endblock %}
 
 {% block style %}
 <style>
-	header, footer {
-		display: none;
-	}
-
+    .yoco-checkout-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #ffffff;
+    }
+    .yoco-checkout-card {
+        background-color: #fff;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgb(0 169 224);
+        text-align: center;
+        max-width: 400px;
+        width: 100%;
+    }
+    .yoco-logo {
+        max-width: 150px;
+        margin-bottom: 30px;
+    }
+    .transaction-details h4 {
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .transaction-details .amount {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 30px;
+    }
+    #yoco-payment-button {
+        background-color: #00a9e0;
+        border-color: #2997ff;
+        font-weight: 600;
+        padding: 15px;
+    }
 </style>
-
 {% endblock %}
