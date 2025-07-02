@@ -3,15 +3,20 @@ $(document).ready(function() {
         e.preventDefault();
 
         var yoco = new YocoSDK({
-            publicKey: '{{ api_key }}',
+            publicKey: '{{ api_key }}'
         });
 
         yoco.showPopup({
-            amountInCents: {{ amount * 100 }},
+            amountInCents: parseInt({{ amount }} * 100),
             currency: '{{ currency }}',
             name: '{{ title }}',
             description: '{{ description }}',
             paymentMethods: ['card', 'applePay', 'googlePay', 'instantEFT'],
+            metadata: {
+                integration_request: '{{ token }}',
+                reference_doctype: '{{ reference_doctype }}',
+                reference_docname: '{{ reference_docname }}'
+            },
             callback: function (result) {
                 if (result.error) {
                     frappe.show_alert({
@@ -19,22 +24,47 @@ $(document).ready(function() {
                         indicator: 'red'
                     });
                 } else {
+                    // Show loading indicator
+                    frappe.show_alert({
+                        message: 'Processing payment...',
+                        indicator: 'blue'
+                    });
+
+                    var paymentData = {
+                        "amount": {{ amount }},
+                        "currency": "{{ currency }}",
+                        "title": "{{ title }}",
+                        "description": "{{ description }}",
+                        "reference_doctype": "{{ reference_doctype }}",
+                        "reference_docname": "{{ reference_docname }}",
+                        "token": "{{ token }}"
+                    };
+
                     frappe.call({
                         method: "payments.templates.pages.yoco_checkout.make_payment",
                         headers: {"X-Requested-With": "XMLHttpRequest"},
                         args: {
                             "yoco_token": result.id,
-                            "data": JSON.stringify({{ frappe.form_dict|json }}),
+                            "data": JSON.stringify(paymentData),
                             "reference_doctype": "{{ reference_doctype }}",
                             "reference_docname": "{{ reference_docname }}",
                             "payment_gateway_account": "{{ payment_gateway_account }}"
                         },
                         callback: function(r) {
-                            if (r.message.status == "Completed") {
+                            if (r.message && r.message.redirect_to) {
                                 window.location.href = r.message.redirect_to;
                             } else {
-                                window.location.href = r.message.redirect_to;
+                                frappe.show_alert({
+                                    message: 'Payment processing failed. Please try again.',
+                                    indicator: 'red'
+                                });
                             }
+                        },
+                        error: function(r) {
+                            frappe.show_alert({
+                                message: 'Payment processing failed. Please try again.',
+                                indicator: 'red'
+                            });
                         }
                     });
                 }

@@ -62,12 +62,30 @@ def get_api_key(payment_gateway_account):
 
 @frappe.whitelist(allow_guest=True)
 def make_payment(yoco_token, data, reference_doctype, reference_docname, payment_gateway_account):
-	data = json.loads(data)
-	data.update({
-		"yoco_token_id": yoco_token,
-		"reference_doctype": reference_doctype,
-		"reference_docname": reference_docname
-	})
+	"""Process Yoco payment after user completes checkout."""
+	try:
+		data = json.loads(data)
+		data.update({
+			"yoco_token_id": yoco_token,
+			"reference_doctype": reference_doctype,
+			"reference_docname": reference_docname
+		})
 
-	controller = frappe.get_doc("Yoco Settings", payment_gateway_account)
-	return controller.create_request(data)
+		controller = frappe.get_doc("Yoco Settings", payment_gateway_account)
+		result = controller.create_request(data)
+		
+		# Ensure we return a proper response
+		if not result:
+			return {
+				"redirect_to": "payment-failed",
+				"status": "Failed"
+			}
+		
+		return result
+		
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Yoco Payment Processing Error")
+		return {
+			"redirect_to": "payment-failed",
+			"status": "Failed"
+		}

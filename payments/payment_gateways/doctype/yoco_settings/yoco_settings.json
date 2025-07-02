@@ -6,6 +6,7 @@
  "field_order": [
   "public_key",
   "secret_key",
+  "webhook_secret",
   "sandbox_mode"
  ],
  "fields": [
@@ -20,6 +21,12 @@
    "fieldtype": "Password",
    "label": "Secret Key",
    "reqd": 1
+  },
+  {
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "description": "Secret key for webhook signature verification"
   },
   {
    "default": "0",

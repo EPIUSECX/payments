@@ -1,111 +1,176 @@
-# Copyright (c) 2024, [Your Name] and contributors
+# Copyright (c) 2024, Frappe Technologies and contributors
 # License: MIT. See LICENSE
 
-import frappe
-from frappe.model.document import Document
-from frappe.utils import get_url
+import json
 from urllib.parse import urlencode
 
+import frappe
+from frappe import _
+from frappe.integrations.utils import create_request_log
+from frappe.model.document import Document
+from frappe.utils import call_hook_method, flt, get_url
+
+from payments.utils import create_payment_gateway
+
+
 class YocoSettings(Document):
-    def on_update(self):
-        from payments.utils import create_payment_gateway
-        from frappe.utils import call_hook_method
+	supported_currencies = ("ZAR",)
 
-        create_payment_gateway(
-            "Yoco-" + self.name,
-            settings="Yoco Settings",
-            controller=self.name,
-        )
-        call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.name)
+	def on_update(self):
+		create_payment_gateway(
+			"Yoco-" + self.name,
+			settings="Yoco Settings",
+			controller=self.name,
+		)
+		call_hook_method("payment_gateway_enabled", gateway="Yoco-" + self.name)
 
-    @frappe.whitelist()
-    def test_connection(self):
-        """Test the connection to the Yoco API."""
-        import requests
+	@frappe.whitelist()
+	def test_connection(self):
+		"""Test the connection to the Yoco API."""
+		import requests
 
-        secret_key = self.get_password(fieldname="secret_key", raise_exception=False)
-        if not secret_key:
-            return {"status": "error", "message": "Please set the Secret Key."}
+		secret_key = self.get_password(fieldname="secret_key", raise_exception=False)
+		if not secret_key:
+			return {"status": "error", "message": "Please set the Secret Key."}
 
-        # Use the correct Yoco API endpoint for testing credentials
-        test_url = "https://payments.yoco.com/api/webhooks" # Correct endpoint for testing
+		# Use the correct Yoco API endpoint for testing credentials
+		test_url = "https://payments.yoco.com/api/webhooks"
 
-        headers = {
-            "Authorization": f"Bearer {secret_key}",
-            "Content-Type": "application/json"
-        }
+		headers = {
+			"Authorization": f"Bearer {secret_key}",
+			"Content-Type": "application/json"
+		}
 
-        try:
-            response = requests.get(test_url, headers=headers, timeout=10) # Use GET method
-            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+		try:
+			response = requests.get(test_url, headers=headers, timeout=10)
+			response.raise_for_status()
 
-            # Assuming a successful response indicates a valid connection
-            return {"status": "success", "message": "Connection successful!"}
+			return {"status": "success", "message": "Connection successful!"}
 
-        except requests.exceptions.RequestException as e:
-            return {"status": "error", "message": f"Connection failed: {e}"}
-        except Exception as e:
-            return {"status": "error", "message": f"An unexpected error occurred: {e}"}
+		except requests.exceptions.RequestException as e:
+			return {"status": "error", "message": f"Connection failed: {e}"}
+		except Exception as e:
+			return {"status": "error", "message": f"An unexpected error occurred: {e}"}
 
+	def validate_transaction_currency(self, currency):
+		if currency not in self.supported_currencies:
+			frappe.throw(
+				_(
+					"Please select another payment method. Yoco does not support transactions in currency '{0}'"
+				).format(currency)
+			)
 
-    def validate_transaction_currency(self, currency):
-        # Yoco primarily supports ZAR
-        if currency != "ZAR":
-             frappe.throw(_("Yoco primarily supports transactions in ZAR.")) # TODO: Confirm if other currencies are supported and add validation
+	def validate_minimum_transaction_amount(self, currency, amount):
+		# Minimum transaction amount is R1.00 (100 cents)
+		minimum_amount = 1.00
 
-    def validate_minimum_transaction_amount(self, currency, amount):
-        # Minimum transaction amount is typically R1.00 (100 cents)
-        minimum_amount_cents = 100 # R1.00 in cents
+		if flt(amount) < minimum_amount:
+			frappe.throw(
+				_("For currency {0}, the minimum transaction amount should be {1}").format(
+					currency, minimum_amount
+				)
+			)
 
-        # Convert amount to cents for comparison
-        amount_in_cents = int(amount * 100) # Assuming currency requires multiplying by 100
+	def get_payment_url(self, **kwargs):
+		integration_request = create_request_log(kwargs, service_name="Yoco")
+		return get_url(f"./yoco_checkout?token={integration_request.name}")
 
-        if amount_in_cents < minimum_amount_cents:
-            frappe.throw(_("For currency {0}, the minimum transaction amount should be {1}").format(currency, minimum_amount_cents / 100.0))
+	def create_request(self, data):
+		import requests
 
-    def get_payment_url(self, **kwargs):
-        from frappe.integrations.utils import create_request_log
+		self.data = frappe._dict(data)
 
-        integration_request = create_request_log(kwargs, service_name="Yoco")
-        return get_url(f"./yoco_checkout?token={integration_request.name}")
+		try:
+			self.integration_request = create_request_log(self.data, service_name="Yoco")
+			return self.create_charge_on_yoco()
 
+		except Exception:
+			frappe.log_error(frappe.get_traceback())
+			return {
+				"redirect_to": frappe.redirect_to_message(
+					_("Server Error"),
+					_(
+						"It seems that there is an issue with the server's Yoco configuration. In case of failure, the amount will get refunded to your account."
+					),
+				),
+				"status": 401,
+			}
 
-    def create_request(self, data):
-        # In this redirect flow, the main payment initiation happens in get_payment_url.
-        # This method might be used for initial logging or setup before calling get_payment_url.
-        # For now, we can just log the initial request data.
-        from frappe.integrations.utils import create_request_log
-        self.data = frappe._dict(data)
-        self.integration_request = create_request_log(self.data, service_name="Yoco Payment Request")
-        frappe.db.commit()
-        # The actual redirect will be handled by Frappe after calling get_payment_url
-        return {
-            "integration_request": self.integration_request.name
-        }
+	def create_charge_on_yoco(self):
+		import requests
 
+		try:
+			secret_key = self.get_password(fieldname="secret_key", raise_exception=False)
+			
+			charge_data = {
+				"amount": int(flt(self.data.amount) * 100),  # Convert to cents
+				"currency": self.data.currency,
+				"token": self.data.yoco_token_id,
+				"description": self.data.description,
+				"metadata": {
+					"integration_request": self.integration_request.name,
+					"reference_doctype": self.data.reference_doctype,
+					"reference_docname": self.data.reference_docname,
+				}
+			}
 
-    def finalize_request(self):
-        # This method is called after the user returns from Yoco.
-        # The actual payment status update is handled by the webhook.
-        # This method can be used to display a pending message or redirect to a status page.
-        # TODO: Determine the exact role of finalize_request in the Yoco redirect flow.
+			headers = {
+				"Authorization": f"Bearer {secret_key}",
+				"Content-Type": "application/json"
+			}
 
-        redirect_to = self.data.get("redirect_to") or None
-        redirect_message = self.data.get("redirect_message") or None
-        status = self.integration_request.status # Assuming status is set by webhook
+			response = requests.post(
+				"https://payments.yoco.com/api/charges",
+				json=charge_data,
+				headers=headers,
+				timeout=30
+			)
 
-        # For now, redirect to a pending page or similar
-        redirect_url = "payment-pending" # Assuming a payment-pending page exists
+			if response.status_code == 201:
+				charge_response = response.json()
+				
+				if charge_response.get("status") == "successful":
+					self.integration_request.db_set("status", "Completed", update_modified=False)
+					self.flags.status_changed_to = "Completed"
+				else:
+					frappe.log_error(f"Yoco charge not successful: {charge_response}", "Yoco Payment Error")
 
-        if redirect_to and "?" in redirect_url:
-            redirect_url += "&" + urlencode({"redirect_to": redirect_to})
-        else:
-            redirect_url += "?" + urlencode({"redirect_to": redirect_to})
+			else:
+				frappe.log_error(f"Yoco API error: {response.text}", "Yoco Payment Error")
 
-        if redirect_message:
-            redirect_url += "&" + urlencode({"redirect_message": redirect_message})
+		except Exception:
+			frappe.log_error(frappe.get_traceback())
 
-        # Add any relevant query parameters from the Yoco redirect to the final URL
-        # TODO: Consult Yoco docs for redirect query parameters
+		return self.finalize_request()
 
-        return {"redirect_to": redirect_url, "status": status}
+	def finalize_request(self):
+		redirect_to = self.data.get("redirect_to") or None
+		redirect_message = self.data.get("redirect_message") or None
+		status = self.integration_request.status
+
+		if self.flags.status_changed_to == "Completed":
+			if self.data.reference_doctype and self.data.reference_docname:
+				custom_redirect_to = None
+				try:
+					custom_redirect_to = frappe.get_doc(
+						self.data.reference_doctype, self.data.reference_docname
+					).run_method("on_payment_authorized", self.flags.status_changed_to)
+				except Exception:
+					frappe.log_error(frappe.get_traceback())
+
+				if custom_redirect_to:
+					redirect_to = custom_redirect_to
+
+				redirect_url = f"payment-success?doctype={self.data.reference_doctype}&docname={self.data.reference_docname}"
+		else:
+			redirect_url = "payment-failed"
+
+		if redirect_to and "?" in redirect_url:
+			redirect_url += "&" + urlencode({"redirect_to": redirect_to})
+		elif redirect_to:
+			redirect_url += "?" + urlencode({"redirect_to": redirect_to})
+
+		if redirect_message:
+			redirect_url += "&" + urlencode({"redirect_message": redirect_message})
+
+		return {"redirect_to": redirect_url, "status": status}
