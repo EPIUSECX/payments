@@ -11,6 +11,7 @@ $(document).ready(function() {
             currency: '{{ currency }}',
             name: '{{ title }}',
             description: '{{ description }}',
+            paymentMethods: ['card', 'applePay', 'googlePay', 'instantEFT'],
             callback: function (result) {
                 if (result.error) {
                     frappe.show_alert({
