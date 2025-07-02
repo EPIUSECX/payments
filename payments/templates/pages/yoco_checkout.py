@@ -25,7 +25,6 @@ expected_keys = (
 
 def get_context(context):
 	context.no_cache = 1
-	context.api_key = get_api_key()
 
 	try:
 		validate_integration_request(frappe.form_dict["token"])
@@ -36,6 +35,11 @@ def get_context(context):
 
 		for key in expected_keys:
 			context[key] = payment_details[key]
+
+		gateway_controller = frappe.get_doc("Payment Gateway", payment_details.get("payment_gateway"))
+		context.payment_gateway_account = gateway_controller.gateway_controller
+		context.api_key = get_api_key(context.payment_gateway_account)
+
 
 		context["token"] = frappe.form_dict["token"]
 		context["amount"] = flt(context["amount"])
@@ -52,12 +56,12 @@ def get_context(context):
 		raise frappe.Redirect
 
 
-def get_api_key():
-	return frappe.db.get_value("Yoco Settings", "Yoco", "public_key")
+def get_api_key(payment_gateway_account):
+	return frappe.db.get_value("Yoco Settings", payment_gateway_account, "public_key")
 
 
 @frappe.whitelist(allow_guest=True)
-def make_payment(yoco_token, data, reference_doctype, reference_docname):
+def make_payment(yoco_token, data, reference_doctype, reference_docname, payment_gateway_account):
 	data = json.loads(data)
 	data.update({
 		"yoco_token_id": yoco_token,
@@ -65,5 +69,5 @@ def make_payment(yoco_token, data, reference_doctype, reference_docname):
 		"reference_docname": reference_docname
 	})
 
-	controller = frappe.get_doc("Yoco Settings", "Yoco")
+	controller = frappe.get_doc("Yoco Settings", payment_gateway_account)
 	return controller.create_request(data)

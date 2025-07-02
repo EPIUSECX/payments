@@ -36,9 +36,11 @@ def get_context(context):
 		for key in expected_keys:
 			context[key] = payment_details[key]
 
+		gateway_controller = frappe.get_doc("Payment Gateway", payment_details.get("payment_gateway"))
+		context.payment_gateway_account = gateway_controller.gateway_controller
+
 		context["token"] = frappe.form_dict["token"]
 		context["amount"] = flt(context["amount"])
-
 
 	except Exception:
 		frappe.redirect_to_message(
@@ -50,33 +52,13 @@ def get_context(context):
 
 		frappe.local.flags.redirect_location = frappe.local.response.location
 		raise frappe.Redirect
-def get_context(context):
-	context.no_cache = 1
 
-	try:
-		validate_integration_request(frappe.form_dict["token"])
+@frappe.whitelist(allow_guest=True)
+def get_payment_url(token):
+	doc = frappe.get_doc("Integration Request", token)
+	payment_details = json.loads(doc.data)
 
-		doc = frappe.get_doc("Integration Request", frappe.form_dict["token"])
+	controller = frappe.get_doc("Payfast Settings", payment_details.get("payment_gateway_account"))
+	payment_url = controller.get_payment_url(**payment_details)
 
-		payment_details = json.loads(doc.data)
-
-		for key in expected_keys:
-			context[key] = payment_details[key]
-
-		context["token"] = frappe.form_dict["token"]
-		context["amount"] = flt(context["amount"])
-
-		controller = frappe.get_doc("Payfast Settings", "Payfast")
-		context.payment_url = controller.get_payment_url(**payment_details)
-
-
-	except Exception:
-		frappe.redirect_to_message(
-			_("Invalid Token"),
-			_("Seems token you are using is invalid!"),
-			http_status_code=400,
-			indicator_color="red",
-		)
-
-		frappe.local.flags.redirect_location = frappe.local.response.location
-		raise frappe.Redirect
+	return payment_url

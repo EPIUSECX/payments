@@ -26,6 +26,7 @@ $(document).ready(function() {
                             "data": JSON.stringify({{ frappe.form_dict|json }}),
                             "reference_doctype": "{{ reference_doctype }}",
                             "reference_docname": "{{ reference_docname }}",
+                            "payment_gateway_account": "{{ payment_gateway_account }}"
                         },
                         callback: function(r) {
                             if (r.message.status == "Completed") {
