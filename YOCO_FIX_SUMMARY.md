@@ -7,10 +7,12 @@
 **Problem**: The `create_request()` method was incomplete and didn't properly handle payment processing.
 
 **Fix**: 
-- Implemented complete `create_charge_on_yoco()` method
+- Implemented complete `create_charge_on_yoco()` method with correct Yoco API endpoint
+- Fixed API endpoint from incorrect `/api/charges` to correct `/v1/charges/`
 - Added proper Integration Request handling
 - Implemented `finalize_request()` method with proper ERPNext integration
 - Added proper error handling and logging
+- Implemented direct API charge processing after frontend token collection
 
 **Files Modified**:
 - `payments/payment_gateways/doctype/yoco_settings/yoco_settings.py`

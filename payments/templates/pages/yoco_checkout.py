@@ -72,7 +72,19 @@ def make_payment(yoco_token, data, reference_doctype, reference_docname, payment
 		})
 
 		controller = frappe.get_doc("Yoco Settings", payment_gateway_account)
-		result = controller.create_request(data)
+		
+		# Set the data and integration request from the token
+		controller.data = frappe._dict(data)
+		
+		# Get the integration request from the token
+		token = data.get("token")
+		if token:
+			controller.integration_request = frappe.get_doc("Integration Request", token)
+		else:
+			frappe.throw(_("Integration Request token missing"))
+		
+		# Process the charge with Yoco API
+		result = controller.create_charge_on_yoco()
 		
 		# Ensure we return a proper response
 		if not result:
