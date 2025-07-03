@@ -20,6 +20,7 @@ expected_keys = (
 	"payer_email",
 	"order_id",
 	"currency",
+	"customer",
 )
 
 
@@ -52,6 +53,7 @@ def get_context(context):
 
 		frappe.local.flags.redirect_location = frappe.local.response.location
 		raise frappe.Redirect
+
 
 @frappe.whitelist(allow_guest=True)
 def get_payment_url(token):

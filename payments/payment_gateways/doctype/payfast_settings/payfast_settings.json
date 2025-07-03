@@ -7,7 +7,10 @@
   "merchant_id",
   "merchant_key",
   "passphrase",
-  "sandbox_mode"
+  "sandbox_mode",
+  "return_url",
+  "cancel_url",
+  "notify_url"
  ],
  "fields": [
   {
@@ -32,6 +35,21 @@
    "fieldname": "sandbox_mode",
    "fieldtype": "Check",
    "label": "Sandbox Mode"
+  },
+  {
+   "fieldname": "return_url",
+   "fieldtype": "Data",
+   "label": "Return URL"
+  },
+  {
+   "fieldname": "cancel_url",
+   "fieldtype": "Data",
+   "label": "Cancel URL"
+  },
+  {
+   "fieldname": "notify_url",
+   "fieldtype": "Data",
+   "label": "Notify URL"
   }
  ],
  "modified": "2024-05-03 12:00:00.000000",

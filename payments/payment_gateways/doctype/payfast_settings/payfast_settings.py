@@ -1,104 +1,129 @@
-# Copyright (c) 2024, [Your Name] and contributors
+# Copyright (c) 2024, Frappe Technologies and contributors
 # License: MIT. See LICENSE
 
+import hashlib
+import json
+from urllib.parse import quote_plus, urlencode
+
 import frappe
+from frappe import _
+from frappe.integrations.utils import create_request_log
 from frappe.model.document import Document
-from frappe.utils import get_url
-from urllib.parse import urlencode
+from frappe.utils import call_hook_method, flt, get_url
+
+from payments.utils import create_payment_gateway
+
 
 class PayfastSettings(Document):
-    def on_update(self):
-        from payments.utils import create_payment_gateway
-        from frappe.utils import call_hook_method
+	supported_currencies = ("ZAR",)
 
-        create_payment_gateway(
-            "Payfast-" + self.name,
-            settings="Payfast Settings",
-            controller=self.name,
-        )
-        call_hook_method("payment_gateway_enabled", gateway="Payfast-" + self.name)
+	def on_update(self):
+		create_payment_gateway(
+			"Payfast-" + self.name,
+			settings="Payfast Settings",
+			controller=self.name,
+		)
+		call_hook_method("payment_gateway_enabled", gateway="Payfast-" + self.name)
 
-    def validate_transaction_currency(self, currency):
-        # Basic currency validation: only ZAR supported in this basic implementation
-        if currency != "ZAR":
-             frappe.throw(_("Payfast only supports transactions in ZAR.")) # TODO: Implement MCP currency validation if needed
+	def validate_transaction_currency(self, currency):
+		if currency not in self.supported_currencies:
+			frappe.throw(
+				_(
+					"Please select another payment method. Payfast does not support transactions in currency '{0}'"
+				).format(currency)
+			)
 
-    def validate_minimum_transaction_amount(self, currency, amount):
-        # Basic minimum amount validation
-        minimum_amount = 5.00 # R5.00 as per documentation example
-        if flt(amount) < minimum_amount:
-            frappe.throw(_("For currency {0}, the minimum transaction amount should be {1}").format(currency, minimum_amount))
+	def validate_minimum_transaction_amount(self, currency, amount):
+		minimum_amount = 5.00  # R5.00 as per documentation example
+		if flt(amount) < minimum_amount:
+			frappe.throw(
+				_("For currency {0}, the minimum transaction amount should be {1}").format(
+					currency, minimum_amount
+				)
+			)
 
-    def get_payment_url(self, **kwargs):
-        from frappe.integrations.utils import create_request_log
+	def get_payment_url(self, **kwargs):
+		# data to be posted to payfast
+		data = {
+			"merchant_id": self.merchant_id,
+			"merchant_key": self.merchant_key,
+			"name_first": kwargs.get("payer_name"),
+			"m_payment_id": kwargs.get("order_id"),
+			"amount": "{:.2f}".format(flt(kwargs.get("amount"))),
+			"item_name": kwargs.get("title"),
+			"custom_str1": self.name,
+		}
+		if self.return_url:
+			data["return_url"] = self.return_url
+		if self.cancel_url:
+			data["cancel_url"] = self.cancel_url
+		if self.notify_url:
+			data["notify_url"] = self.notify_url
+		email = frappe.db.get_value("Customer", kwargs.get("customer"), "email_id")
+		if email:
+			data["email_address"] = email
 
-        integration_request = create_request_log(kwargs, service_name="Payfast")
-        return get_url(f"./payfast_checkout?token={integration_request.name}")
+		# remove any keys that are not set
+		data = {k: v for k, v in data.items() if v}
 
-    def create_request(self, data):
-        from frappe.integrations.utils import create_request_log
+		# create a signature
+		passphrase = self.get_password("passphrase")
+		if passphrase:
+			data["signature"] = self._get_signature(data, passphrase)
 
-        self.data = frappe._dict(data)
+		payfast_url = (
+			"https://sandbox.payfast.co.za/eng/process"
+			if self.sandbox_mode
+			else "https://www.payfast.co.za/eng/process"
+		)
 
-        # Prepare data for Payfast based on required parameters
-        payfast_data = {
-            "amount": self.data.amount,
-            "item_name": self.data.item_name or f"Payment for {self.data.reference_doctype}: {self.data.reference_docname}",
-            "item_description": self.data.item_description,
-            "return_url": self.data.get("return_url"),
-            "cancel_url": self.data.get("cancel_url"),
-            "notify_url": self.data.get("notify_url"),
-            "payer_name": self.data.payer_name,
-            "payer_email": self.data.payer_email,
-            "reference_docname": self.data.reference_docname,
-            "reference_doctype": self.data.reference_doctype,
-            # Add other relevant data from self.data if needed by get_payment_url
-        }
+		return f"{payfast_url}?{urlencode(data)}"
 
-        self.integration_request = create_request_log(payfast_data, service_name="Payfast")
+	def _get_signature(self, data, passphrase):
+		# Create URL encoded string
+		data = dict(sorted(data.items()))
+		pf_output = "&".join(f"{k}={quote_plus(str(v))}" for k, v in data.items())
+		if passphrase:
+			pf_output += f"&passphrase={passphrase}"
+		return hashlib.md5(pf_output.encode("utf-8")).hexdigest()
 
-        # The actual redirection happens via get_payment_url, which is called after create_request
-        # We just need to return the necessary info for the redirect
-        return {
-            "redirect_to": self.get_payment_url(**payfast_data),
-            "integration_request": self.integration_request.name
-        }
+	def _verify_signature(self, data):
+		# Create a hash of the received data
+		passphrase = self.get_password("passphrase")
+		# remove signature from data
+		signature = data.pop("signature")
+		signature_to_verify = self._get_signature(data, passphrase)
+		return signature == signature_to_verify
 
-    def finalize_request(self):
-        # TODO: Implement Payfast ITN (Instant Transaction Notification) handler for server-side status updates
-        redirect_to = self.data.get("redirect_to") or None
-        redirect_message = self.data.get("redirect_message") or None
-        status = self.integration_request.status # Assuming status is set in create_request or an ITN handler
 
-        if status == "Completed": # Assuming "Completed" status indicates success
-            if self.data.reference_doctype and self.data.reference_docname:
-                custom_redirect_to = None
-                try:
-                    # Call on_payment_authorized on the reference document
-                    custom_redirect_to = frappe.get_doc(
-                        self.data.reference_doctype, self.data.reference_docname
-                    ).run_method("on_payment_authorized", status)
-                except Exception:
-                    frappe.log_error(frappe.get_traceback())
+@frappe.whitelist(allow_guest=True)
+def payfast_itn():
+	# ITN callback from payfast
+	try:
+		# get the posted data from payfast
+		data = frappe.local.form_dict
 
-                if custom_redirect_to:
-                    redirect_to = custom_redirect_to
+		# get the payment gateway controller
+		# custom_str1 should be the name of the payfast settings doc
+		controller = frappe.get_doc("Payfast Settings", data.get("custom_str1"))
 
-                redirect_url = f"payment-success?doctype={self.data.reference_doctype}&docname={self.data.reference_docname}"
+		# verify the signature
+		if not controller._verify_signature(data):
+			frappe.log_error("Payfast ITN Signature Verification Failed", data)
+			return
 
-            # TODO: Check if Payfast provides a specific success redirect URL
-            # if self.redirect_url:
-            #     redirect_url = self.redirect_url
-            #     redirect_to = None
-        else:
-            redirect_url = "payment-failed" # Assuming any other status is a failure
+		# get the integration request
+		integration_request = frappe.get_doc("Integration Request", data.get("m_payment_id"))
 
-        if redirect_to and "?" in redirect_url:
-            redirect_url += "&" + urlencode({"redirect_to": redirect_to})
-        else:
-            redirect_url += "?" + urlencode({"redirect_to": redirect_to})
+		if data.get("payment_status") == "COMPLETE":
+			integration_request.db_set("status", "Completed", update_modified=False)
+			if integration_request.reference_doctype and integration_request.reference_docname:
+				doc = frappe.get_doc(
+					integration_request.reference_doctype, integration_request.reference_docname
+				)
+				doc.run_method("on_payment_authorized", "Completed")
+		else:
+			integration_request.db_set("status", "Failed", update_modified=False)
 
-        if redirect_message:
-            redirect_url += "&" + urlencode({"redirect_message": redirect_message})
-
-        return {"redirect_to": redirect_url, "status": status}
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Payfast ITN Error")
