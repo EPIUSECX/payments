@@ -7,7 +7,10 @@
   "public_key",
   "secret_key",
   "webhook_secret",
-  "sandbox_mode"
+  "sandbox_mode",
+  "apple_pay_section",
+  "enable_apple_pay",
+  "apple_pay_merchant_id"
  ],
  "fields": [
   {
@@ -26,13 +29,33 @@
    "fieldname": "webhook_secret",
    "fieldtype": "Password",
    "label": "Webhook Secret",
-   "description": "Secret key for webhook signature verification"
+   "description": "Secret key for webhook signature verification (from Yoco webhook settings)"
   },
   {
-   "default": "0",
    "fieldname": "sandbox_mode",
    "fieldtype": "Check",
-   "label": "Sandbox Mode"
+   "label": "Sandbox Mode",
+   "default": 1,
+   "description": "Enable for testing with Yoco sandbox environment"
+  },
+  {
+   "fieldname": "apple_pay_section",
+   "fieldtype": "Section Break",
+   "label": "Apple Pay Configuration"
+  },
+  {
+   "fieldname": "enable_apple_pay",
+   "fieldtype": "Check",
+   "label": "Enable Apple Pay",
+   "default": 1,
+   "description": "Enable Apple Pay as a payment option"
+  },
+  {
+   "fieldname": "apple_pay_merchant_id",
+   "fieldtype": "Data",
+   "label": "Apple Pay Merchant ID",
+   "description": "Your Apple Pay merchant identifier (e.g., merchant.com.yourcompany.yoco)",
+   "depends_on": "enable_apple_pay"
   }
  ],
  "modified": "2024-05-03 12:00:00.000000",

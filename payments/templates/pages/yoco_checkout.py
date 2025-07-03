@@ -39,7 +39,11 @@ def get_context(context):
 		gateway_controller = frappe.get_doc("Payment Gateway", payment_details.get("payment_gateway"))
 		context.payment_gateway_account = gateway_controller.gateway_controller
 		context.api_key = get_api_key(context.payment_gateway_account)
-
+		
+		# Get Apple Pay configuration
+		apple_pay_config = get_apple_pay_config(context.payment_gateway_account)
+		context.enable_apple_pay = apple_pay_config["enable_apple_pay"]
+		context.apple_pay_merchant_id = apple_pay_config["apple_pay_merchant_id"]
 
 		context["token"] = frappe.form_dict["token"]
 		context["amount"] = flt(context["amount"])
@@ -58,6 +62,15 @@ def get_context(context):
 
 def get_api_key(payment_gateway_account):
 	return frappe.db.get_value("Yoco Settings", payment_gateway_account, "public_key")
+
+
+def get_apple_pay_config(payment_gateway_account):
+	"""Get Apple Pay configuration from Yoco Settings."""
+	settings = frappe.get_doc("Yoco Settings", payment_gateway_account)
+	return {
+		"enable_apple_pay": settings.get("enable_apple_pay", 1),
+		"apple_pay_merchant_id": settings.get("apple_pay_merchant_id", "")
+	}
 
 
 @frappe.whitelist(allow_guest=True)

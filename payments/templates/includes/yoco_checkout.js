@@ -6,12 +6,20 @@ $(document).ready(function() {
             publicKey: '{{ api_key }}'
         });
 
-        yoco.showPopup({
+        // Build payment methods array
+        var paymentMethods = ['card', 'googlePay', 'instantEFT'];
+        
+        // Add Apple Pay if enabled and merchant ID is configured
+        {% if enable_apple_pay and apple_pay_merchant_id %}
+        paymentMethods.push('applePay');
+        {% endif %}
+
+        var popupConfig = {
             amountInCents: parseInt('{{ amount }}' * 100),
             currency: '{{ currency }}',
             name: '{{ title }}',
             description: '{{ description }}',
-            paymentMethods: ['card', 'applePay', 'googlePay', 'instantEFT'],
+            paymentMethods: paymentMethods,
             metadata: {
                 integration_request: '{{ token }}',
                 reference_doctype: '{{ reference_doctype }}',
@@ -71,6 +79,18 @@ $(document).ready(function() {
                     });
                 }
             }
-        });
+        };
+
+        // Add Apple Pay specific configuration if enabled
+        {% if enable_apple_pay and apple_pay_merchant_id %}
+        popupConfig.applePay = {
+            merchantIdentifier: '{{ apple_pay_merchant_id }}',
+            merchantCapabilities: ['supports3DS', 'supportsCredit', 'supportsDebit'],
+            supportedNetworks: ['visa', 'masterCard', 'amex', 'discover']
+        };
+        {% endif %}
+
+        // Show the Yoco payment popup
+        yoco.showPopup(popupConfig);
     });
 });
