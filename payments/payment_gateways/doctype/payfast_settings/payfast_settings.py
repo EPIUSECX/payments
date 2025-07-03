@@ -100,6 +100,7 @@ class PayfastSettings(Document):
 def payfast_itn():
 	# ITN callback from payfast
 	try:
+		frappe.log_error("Payfast ITN called", frappe.local.form_dict)
 		# get the posted data from payfast
 		data = frappe.local.form_dict
 
@@ -122,6 +123,10 @@ def payfast_itn():
 					integration_request.reference_doctype, integration_request.reference_docname
 				)
 				doc.run_method("on_payment_authorized", "Completed")
+
+				# redirect to the orders page
+				frappe.local.response["type"] = "redirect"
+				frappe.local.response["location"] = f"/app/{doc.doctype.lower().replace(' ', '-')}/{doc.name}"
 		else:
 			integration_request.db_set("status", "Failed", update_modified=False)
 
