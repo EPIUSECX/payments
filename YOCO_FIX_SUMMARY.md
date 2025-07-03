@@ -2,20 +2,22 @@
 
 ## 🚨 Issues Identified and Fixed
 
-### 1. **Incomplete Payment Processing in Yoco Settings**
+### 1. **Implemented Hybrid Payment Processing**
 
-**Problem**: The `create_request()` method was incomplete and didn't properly handle payment processing.
+**Problem**: The previous implementation relied entirely on webhooks, but webhooks weren't being received from Yoco, causing payments to succeed but ERPNext documents not to be updated.
 
 **Fix**: 
-- Implemented complete `create_charge_on_yoco()` method with correct Yoco API endpoint
-- Fixed API endpoint from incorrect `/api/charges` to correct `/v1/charges/`
-- Added proper Integration Request handling
-- Implemented `finalize_request()` method with proper ERPNext integration
-- Added proper error handling and logging
-- Implemented direct API charge processing after frontend token collection
+- **Implemented hybrid approach**: Frontend processes payment immediately after Yoco success + webhook as backup
+- Removed complex API charge creation that was causing errors
+- Added immediate payment processing in `make_payment()` function
+- Frontend now calls backend immediately after successful Yoco payment
+- Backend processes Integration Request and calls `on_payment_authorized()` to create Payment Entry, Sales Invoice, etc.
+- Webhook support maintained as backup for environments where webhooks are properly configured
 
 **Files Modified**:
 - `payments/payment_gateways/doctype/yoco_settings/yoco_settings.py`
+- `payments/templates/pages/yoco_checkout.py`
+- `payments/templates/includes/yoco_checkout.js`
 
 ### 2. **Incomplete Webhook Implementation**
 

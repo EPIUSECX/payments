@@ -7,7 +7,7 @@ $(document).ready(function() {
         });
 
         yoco.showPopup({
-            amountInCents: parseInt({{ amount }} * 100),
+            amountInCents: parseInt('{{ amount }}' * 100),
             currency: '{{ currency }}',
             name: '{{ title }}',
             description: '{{ description }}',
@@ -23,15 +23,17 @@ $(document).ready(function() {
                         message: result.error.message,
                         indicator: 'red'
                     });
+                    // Redirect to payment failed page
+                    window.location.href = '/payment-failed';
                 } else {
-                    // Show loading indicator
+                    // Payment successful - process immediately since webhooks may not be configured
                     frappe.show_alert({
-                        message: 'Processing payment...',
+                        message: 'Payment successful! Processing...',
                         indicator: 'blue'
                     });
 
                     var paymentData = {
-                        "amount": {{ amount }},
+                        "amount": '{{ amount }}',
                         "currency": "{{ currency }}",
                         "title": "{{ title }}",
                         "description": "{{ description }}",

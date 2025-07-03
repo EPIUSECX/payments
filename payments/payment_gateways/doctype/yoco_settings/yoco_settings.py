@@ -77,23 +77,14 @@ class YocoSettings(Document):
 
 	def create_request(self, data):
 		"""
-		For Yoco, we use a webhook-based flow where the payment is processed
-		on the frontend and the webhook handles the completion.
-		This method just logs the request and returns success.
+		For Yoco, the payment is processed entirely on the frontend with the Yoco SDK.
+		The webhook handles the completion and ERPNext integration.
+		This method just creates the Integration Request for tracking.
 		"""
 		self.data = frappe._dict(data)
 
 		try:
 			self.integration_request = create_request_log(self.data, service_name="Yoco")
-			
-			# For Yoco, the actual payment processing happens on the frontend
-			# and the webhook handles the completion. We just need to return
-			# the integration request for tracking.
-			
-			# Set status to Queued initially
-			self.integration_request.db_set("status", "Queued", update_modified=False)
-			self.flags.status_changed_to = "Queued"
-			
 			return self.finalize_request()
 
 		except Exception:
@@ -102,86 +93,11 @@ class YocoSettings(Document):
 				"redirect_to": frappe.redirect_to_message(
 					_("Server Error"),
 					_(
-						"It seems that there is an issue with the server's Yoco configuration. Please try again."
+						"It seems that there is an issue with the server's Yoco configuration. In case of failure, the amount will get refunded to your account."
 					),
 				),
 				"status": 401,
 			}
-
-	def create_charge_on_yoco(self):
-		"""
-		This method is called from the frontend after the user completes
-		the payment with Yoco. It processes the charge using the Yoco token.
-		"""
-		import requests
-
-		try:
-			secret_key = self.get_password(fieldname="secret_key", raise_exception=False)
-			
-			if not secret_key:
-				frappe.throw(_("Yoco Secret Key not configured"))
-			
-			# Yoco API charge creation
-			charge_data = {
-				"amountInCents": int(flt(self.data.amount) * 100),
-				"currency": self.data.currency,
-				"token": self.data.yoco_token_id,
-				"description": self.data.description,
-				"metadata": {
-					"integration_request": self.integration_request.name,
-					"reference_doctype": self.data.reference_doctype,
-					"reference_docname": self.data.reference_docname,
-				}
-			}
-
-			headers = {
-				"Authorization": f"Bearer {secret_key}",
-				"Content-Type": "application/json"
-			}
-
-			# Use the correct Yoco API endpoint
-			api_url = "https://online.yoco.com/v1/charges/"
-
-			response = requests.post(
-				api_url,
-				json=charge_data,
-				headers=headers,
-				timeout=30
-			)
-
-			frappe.log_error(f"Yoco API Response: {response.status_code} - {response.text}", "Yoco API Debug")
-
-			if response.status_code in [200, 201]:
-				charge_response = response.json()
-				
-				if charge_response.get("status") == "successful":
-					self.integration_request.db_set("status", "Completed", update_modified=False)
-					self.flags.status_changed_to = "Completed"
-					
-					# Call payment authorization immediately for direct API flow
-					if self.data.reference_doctype and self.data.reference_docname:
-						try:
-							frappe.get_doc(
-								self.data.reference_doctype, self.data.reference_docname
-							).run_method("on_payment_authorized", "Completed")
-						except Exception:
-							frappe.log_error(frappe.get_traceback())
-				else:
-					frappe.log_error(f"Yoco charge not successful: {charge_response}", "Yoco Payment Error")
-					self.integration_request.db_set("status", "Failed", update_modified=False)
-					self.flags.status_changed_to = "Failed"
-
-			else:
-				frappe.log_error(f"Yoco API error: {response.status_code} - {response.text}", "Yoco Payment Error")
-				self.integration_request.db_set("status", "Failed", update_modified=False)
-				self.flags.status_changed_to = "Failed"
-
-		except Exception:
-			frappe.log_error(frappe.get_traceback())
-			self.integration_request.db_set("status", "Failed", update_modified=False)
-			self.flags.status_changed_to = "Failed"
-
-		return self.finalize_request()
 
 	def finalize_request(self):
 		redirect_to = self.data.get("redirect_to") or None

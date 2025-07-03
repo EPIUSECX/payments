@@ -71,29 +71,36 @@ def make_payment(yoco_token, data, reference_doctype, reference_docname, payment
 			"reference_docname": reference_docname
 		})
 
-		controller = frappe.get_doc("Yoco Settings", payment_gateway_account)
-		
-		# Set the data and integration request from the token
-		controller.data = frappe._dict(data)
-		
-		# Get the integration request from the token
+		# Get the Integration Request from the token
 		token = data.get("token")
-		if token:
-			controller.integration_request = frappe.get_doc("Integration Request", token)
-		else:
+		if not token:
 			frappe.throw(_("Integration Request token missing"))
+
+		# Get Integration Request and update it
+		integration_request = frappe.get_doc("Integration Request", token)
+		integration_request.db_set("status", "Completed", update_modified=False)
 		
-		# Process the charge with Yoco API
-		result = controller.create_charge_on_yoco()
-		
-		# Ensure we return a proper response
-		if not result:
+		# Process the payment in ERPNext
+		if reference_doctype == "Payment Request" and reference_docname:
+			payment_request = frappe.get_doc("Payment Request", reference_docname)
+			
+			# Call the payment authorization method to create Payment Entry, Sales Invoice, etc.
+			custom_redirect_to = payment_request.run_method("on_payment_authorized", "Completed")
+			
+			frappe.db.commit()
+			
+			# Return success redirect
+			redirect_url = f"payment-success?doctype={reference_doctype}&docname={reference_docname}"
+			
+			if custom_redirect_to:
+				redirect_url = custom_redirect_to
+			
 			return {
-				"redirect_to": "payment-failed",
-				"status": "Failed"
+				"redirect_to": redirect_url,
+				"status": "Completed"
 			}
-		
-		return result
+		else:
+			frappe.throw(_("Invalid payment reference"))
 		
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Yoco Payment Processing Error")
