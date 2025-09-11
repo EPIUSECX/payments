@@ -75,7 +75,63 @@ def get_apple_pay_config(payment_gateway_account):
 
 @frappe.whitelist(allow_guest=True)
 def make_payment(yoco_token, data, reference_doctype, reference_docname, payment_gateway_account):
-	"""Process Yoco payment after user completes checkout."""
+	"""
+	ERPNext-compliant payment processing via YocoSettings controller.
+	This method now delegates to the controller instead of processing directly.
+	"""
+	try:
+		# Parse and validate data
+		data = json.loads(data) if isinstance(data, str) else data
+		token = data.get("token")
+		
+		if not token:
+			frappe.throw(_("Integration Request token missing"))
+
+		# Get Integration Request
+		integration_request = frappe.get_doc("Integration Request", token)
+		
+		# Get YocoSettings controller
+		yoco_settings = frappe.get_doc("Yoco Settings", payment_gateway_account)
+		
+		# Delegate payment processing to controller
+		payment_data = {
+			"yoco_token_id": yoco_token,
+			"reference_doctype": reference_doctype,
+			"reference_docname": reference_docname,
+			"token": token,
+			"payment_details": data
+		}
+		
+		# Process payment via controller
+		result = yoco_settings.process_payment_completion(payment_data, integration_request)
+		
+		return result
+		
+	except Exception as e:
+		frappe.log_error(
+			f"Yoco payment processing error: {str(e)}\n{frappe.get_traceback()}",
+			"Yoco Payment Processing Error"
+		)
+		return {
+			"redirect_to": "payment-failed",
+			"status": "Failed",
+			"error": str(e)
+		}
+
+
+# Backward compatibility - deprecated method
+@frappe.whitelist(allow_guest=True)
+def make_payment_legacy(yoco_token, data, reference_doctype, reference_docname, payment_gateway_account):
+	"""
+	Legacy payment processing method - deprecated.
+	Kept for backward compatibility but logs deprecation warning.
+	"""
+	frappe.log_error(
+		"make_payment_legacy called - this method is deprecated. "
+		"Use make_payment() instead which delegates to YocoSettings controller.",
+		"Yoco Payment Deprecated Method"
+	)
+	
 	try:
 		data = json.loads(data)
 		data.update({
@@ -115,8 +171,11 @@ def make_payment(yoco_token, data, reference_doctype, reference_docname, payment
 		else:
 			frappe.throw(_("Invalid payment reference"))
 		
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Yoco Payment Processing Error")
+	except Exception as e:
+		frappe.log_error(
+			f"Legacy Yoco payment processing error: {str(e)}\n{frappe.get_traceback()}",
+			"Yoco Payment Legacy Processing Error"
+		)
 		return {
 			"redirect_to": "payment-failed",
 			"status": "Failed"
