@@ -95,9 +95,9 @@ class PayfastSettings(Document):
 
 	def create_payfast_order(self):
 		"""Create PayFastOrder record for transaction tracking"""
-		from payments.payment_gateways.doctype.payfast_order.payfast_order import PayfastOrder
+		from payments.payment_gateways.doctype.payfast_order.payfast_order import PayFastOrder
 		
-		order_data = PayfastOrder.create_order(
+		order_data = PayFastOrder.create_order(
 			m_payment_id=self.integration_request.name,
 			amount_gross=self.data.amount,
 			currency=self.data.currency or "ZAR",
@@ -171,7 +171,7 @@ class PayfastSettings(Document):
 		Handle ITN (Instant Transaction Notification) from PayFast
 		ERPNext-compliant ITN processing with proper logging and order tracking
 		"""
-		from payments.payment_gateways.doctype.payfast_order.payfast_order import PayfastOrder
+		from payments.payment_gateways.doctype.payfast_order.payfast_order import PayFastOrder
 		
 		try:
 			# Log ITN received

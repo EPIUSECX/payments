@@ -1,0 +1,277 @@
+{
+ "actions": [],
+ "autoname": "autoincrement",
+ "creation": "2024-12-11 13:48:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "m_payment_id",
+  "column_break_main",
+  "amount_gross",
+  "currency",
+  "payfast_details_section",
+  "pf_payment_id",
+  "merchant_id",
+  "column_break_payfast",
+  "amount_fee",
+  "amount_net",
+  "payment_method",
+  "customer_details_section",
+  "name_first",
+  "name_last",
+  "column_break_customer",
+  "email_address",
+  "item_details_section",
+  "item_name",
+  "column_break_item",
+  "item_description",
+  "reference_section",
+  "ref_dt",
+  "column_break_ref",
+  "ref_dn",
+  "technical_section",
+  "signature_verification",
+  "column_break_tech",
+  "meta_data"
+ ],
+ "fields": [
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nComplete\nCancelled\nFailed",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "m_payment_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Merchant Payment ID",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount_gross",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount Gross",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "default": "ZAR",
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payfast_details_section",
+   "fieldtype": "Section Break",
+   "label": "PayFast Details"
+  },
+  {
+   "fieldname": "pf_payment_id",
+   "fieldtype": "Data",
+   "label": "PayFast Payment ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "label": "Merchant ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_payfast",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.pf_payment_id",
+   "fieldname": "amount_fee",
+   "fieldtype": "Currency",
+   "label": "Amount Fee",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.pf_payment_id",
+   "fieldname": "amount_net",
+   "fieldtype": "Currency",
+   "label": "Amount Net",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_method",
+   "fieldtype": "Data",
+   "label": "Payment Method",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer_details_section",
+   "fieldtype": "Section Break",
+   "label": "Customer Details"
+  },
+  {
+   "fieldname": "name_first",
+   "fieldtype": "Data",
+   "label": "First Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "name_last",
+   "fieldtype": "Data",
+   "label": "Last Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_customer",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "email_address",
+   "fieldtype": "Data",
+   "label": "Email Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_details_section",
+   "fieldtype": "Section Break",
+   "label": "Item Details"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item_description",
+   "fieldtype": "Small Text",
+   "label": "Item Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_section",
+   "fieldtype": "Section Break",
+   "label": "Reference"
+  },
+  {
+   "fieldname": "ref_dt",
+   "fieldtype": "Link",
+   "label": "Reference DocType",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ref",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ref_dn",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference DocName",
+   "options": "ref_dt",
+   "read_only": 1
+  },
+  {
+   "fieldname": "technical_section",
+   "fieldtype": "Section Break",
+   "label": "Technical Details"
+  },
+  {
+   "default": "0",
+   "fieldname": "signature_verification",
+   "fieldtype": "Check",
+   "label": "Signature Verified",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tech",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "{}",
+   "fieldname": "meta_data",
+   "fieldtype": "Code",
+   "label": "Meta Data",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-12-11 13:48:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payment Gateways",
+ "name": "PayFast Order",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Orange",
+   "title": "Pending"
+  },
+  {
+   "color": "Green",
+   "title": "Complete"
+  },
+  {
+   "color": "Red",
+   "title": "Failed"
+  },
+  {
+   "color": "Grey",
+   "title": "Cancelled"
+  }
+ ],
+ "title_field": "m_payment_id",
+ "track_changes": 1,
+ "track_seen": 1
+}

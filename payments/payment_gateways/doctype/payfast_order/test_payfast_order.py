@@ -8,7 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestPayfastOrder(FrappeTestCase):
+class TestPayFastOrder(FrappeTestCase):
     def setUp(self):
         """Set up test data"""
         # Create test PayfastSettings if not exists
@@ -52,29 +52,29 @@ class TestPayfastOrder(FrappeTestCase):
         self.assertTrue(order_data.name)
 
     def test_payfast_order_static_creation(self):
-        """Test PayFastOrder static creation method"""
-        from payments.payment_gateways.doctype.payfast_order.payfast_order import PayfastOrder
-        
-        result = PayfastOrder.create_order(
-            m_payment_id="integration_req_test_001",
-            amount_gross=250.00,
-            currency="ZAR",
-            item_name="Test Payment",
-            ref_dt="Payment Request",
-            ref_dn="TEST-PR-002"
-        )
-        
-        # Verify result structure
-        self.assertIn("payfast_order", result)
-        self.assertEqual(result["m_payment_id"], "integration_req_test_001")
-        self.assertEqual(result["amount_gross"], 250.00)
-        self.assertEqual(result["currency"], "ZAR")
-        
-        # Verify order was created in database
-        order = frappe.get_doc("PayFast Order", result["payfast_order"])
-        self.assertEqual(order.amount_gross, 250.00)
-        self.assertEqual(order.ref_dt, "Payment Request")
-        self.assertEqual(order.ref_dn, "TEST-PR-002")
+		"""Test PayFastOrder static creation method"""
+		from payments.payment_gateways.doctype.payfast_order.payfast_order import PayFastOrder
+		
+		result = PayFastOrder.create_order(
+			m_payment_id="integration_req_test_001",
+			amount_gross=250.00,
+			currency="ZAR",
+			item_name="Test Payment",
+			ref_dt="Payment Request",
+			ref_dn="TEST-PR-002"
+		)
+		
+		# Verify result structure
+		self.assertIn("payfast_order", result)
+		self.assertEqual(result["m_payment_id"], "integration_req_test_001")
+		self.assertEqual(result["amount_gross"], 250.00)
+		self.assertEqual(result["currency"], "ZAR")
+		
+		# Verify order was created in database
+		order = frappe.get_doc("PayFast Order", result["payfast_order"])
+		self.assertEqual(order.amount_gross, 250.00)
+		self.assertEqual(order.ref_dt, "Payment Request")
+		self.assertEqual(order.ref_dn, "TEST-PR-002")
 
     def test_itn_signature_verification(self):
         """Test PayFast ITN signature verification"""
