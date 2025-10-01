@@ -1,13 +1,34 @@
 # Copyright (c) 2024, Frappe Technologies and contributors
 # License: MIT. See LICENSE
 
-import hashlib
+"""
+PayFast Order DocType for tracking payment transactions.
+
+This module manages PayFast payment orders, handling ITN notifications,
+signature verification, and payment status updates.
+"""
+
 import json
-from urllib.parse import quote_plus
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+
+# Import PayFast utilities and constants
+from payments.payment_gateways.doctype.payfast_settings.payfast_utils import (
+    verify_itn_signature,
+    get_payfast_settings,
+)
+from payments.payment_gateways.doctype.payfast_settings.payfast_constants import (
+    ORDER_STATUS_PENDING,
+    ORDER_STATUS_COMPLETE,
+    ORDER_STATUS_FAILED,
+    ORDER_STATUS_CANCELLED,
+    PAYMENT_STATUS_COMPLETE,
+    PAYMENT_STATUS_FAILED,
+    PAYMENT_STATUS_CANCELLED,
+    SUPPORTED_CURRENCY,
+)
 
 
 class PayFastOrder(Document):
@@ -43,13 +64,27 @@ class PayFastOrder(Document):
 	def create_order(
 		m_payment_id: str,
 		amount_gross: float,
-		currency: str = "ZAR",
+		currency: str = SUPPORTED_CURRENCY,
 		item_name: str = None,
 		meta_data: dict | None = None,
 		ref_dt: str | None = None,
 		ref_dn: str | None = None,
 	) -> dict:
-		"""Create a new PayFast Order record for tracking payment"""
+		"""
+		Create a new PayFast Order record for tracking payment.
+		
+		Args:
+			m_payment_id: Unique merchant payment ID (typically Integration Request name)
+			amount_gross: Total payment amount
+			currency: Transaction currency (default: ZAR)
+			item_name: Name/description of item being purchased
+			meta_data: Additional metadata to store
+			ref_dt: Reference doctype (e.g., "Sales Invoice")
+			ref_dn: Reference document name
+			
+		Returns:
+			dict: Order details including order name and payment ID
+		"""
 		if meta_data is None:
 			meta_data = {}
 		
@@ -60,7 +95,7 @@ class PayFastOrder(Document):
 			currency=currency,
 			item_name=item_name,
 			meta_data=frappe.as_json(meta_data, indent=2),
-			status="Pending",
+			status=ORDER_STATUS_PENDING,
 			ref_dt=ref_dt,
 			ref_dn=ref_dn,
 		)
@@ -74,10 +109,34 @@ class PayFastOrder(Document):
 		}
 
 	def handle_itn_notification(self, itn_data: dict):
-		"""Handle ITN (Instant Transaction Notification) from PayFast"""
+		"""
+		Handle ITN (Instant Transaction Notification) from PayFast.
+		
+		This method processes the ITN, verifies the signature, updates order status,
+		and triggers payment completion for the reference document.
+		
+		Args:
+			itn_data: Dictionary containing ITN data from PayFast
+			
+		Returns:
+			bool: True if ITN processed successfully, False otherwise
+		"""
 		try:
-			# Verify signature first
-			if not self.verify_itn_signature(itn_data):
+			# Get PayFast settings for signature verification
+			settings_name = itn_data.get("custom_str1")
+			if not settings_name:
+				frappe.log_error(
+					f"PayFast ITN missing settings reference for order {self.name}",
+					"PayFast Order ITN Error"
+				)
+				self.mark_as_failed("ITN missing settings reference")
+				return False
+			
+			settings = frappe.get_doc("Payfast Settings", settings_name)
+			passphrase = settings.get_password("passphrase", raise_exception=False)
+			
+			# CRITICAL: Verify signature using utility function
+			if not verify_itn_signature(itn_data, passphrase):
 				frappe.log_error(
 					f"PayFast ITN signature verification failed for order {self.name}",
 					"PayFast Order ITN Error"
@@ -88,15 +147,15 @@ class PayFastOrder(Document):
 			# Update order with ITN data
 			self.update_from_itn_data(itn_data)
 			
-			# Process based on payment status
+			# Process based on payment status using constants
 			payment_status = itn_data.get("payment_status")
 			
-			if payment_status == "COMPLETE":
+			if payment_status == PAYMENT_STATUS_COMPLETE:
 				self.mark_as_complete(itn_data)
 				self.trigger_payment_completion()
-			elif payment_status == "FAILED":
+			elif payment_status == PAYMENT_STATUS_FAILED:
 				self.mark_as_failed("Payment failed at PayFast")
-			elif payment_status == "CANCELLED":
+			elif payment_status == PAYMENT_STATUS_CANCELLED:
 				self.mark_as_cancelled("Payment cancelled by user")
 			else:
 				frappe.log_error(
@@ -115,7 +174,12 @@ class PayFastOrder(Document):
 			return False
 
 	def update_from_itn_data(self, itn_data: dict):
-		"""Update order fields from ITN data"""
+		"""
+		Update order fields from ITN data.
+		
+		Args:
+			itn_data: Dictionary containing ITN data from PayFast
+		"""
 		self.pf_payment_id = itn_data.get("pf_payment_id")
 		self.merchant_id = itn_data.get("merchant_id")
 		self.amount_gross = float(itn_data.get("amount_gross", 0))
@@ -129,74 +193,118 @@ class PayFastOrder(Document):
 		self.item_description = itn_data.get("item_description")
 		self.signature_verification = 1
 		
-		# Store complete ITN data in meta_data
+		# Store complete ITN data in meta_data for audit trail
 		existing_meta = json.loads(self.meta_data or "{}")
 		existing_meta["itn_data"] = itn_data
+		existing_meta["itn_received_at"] = frappe.utils.now()
 		self.meta_data = frappe.as_json(existing_meta, indent=2)
 
 	def verify_itn_signature(self, itn_data: dict) -> bool:
-		"""Verify PayFast ITN signature"""
+		"""
+		Verify PayFast ITN signature.
+		
+		DEPRECATED: This method is deprecated. Use payfast_utils.verify_itn_signature() instead.
+		Kept for backward compatibility only.
+		
+		Args:
+			itn_data: Dictionary containing ITN data from PayFast
+			
+		Returns:
+			bool: True if signature is valid, False otherwise
+		"""
+		frappe.log_error(
+			f"PayFastOrder.verify_itn_signature() called for order {self.name}. "
+			"This method is deprecated. Use payfast_utils.verify_itn_signature() instead.",
+			"PayFast Order Deprecated Method"
+		)
+		
+		# Get settings from ITN data
+		settings_name = itn_data.get("custom_str1")
+		if not settings_name:
+			return False
+		
 		try:
-			# Get PayFast settings
-			settings = frappe.get_single("Payfast Settings")
+			settings = frappe.get_doc("Payfast Settings", settings_name)
 			passphrase = settings.get_password("passphrase", raise_exception=False)
-			
-			# Extract signature from data
-			received_signature = itn_data.get("signature")
-			if not received_signature:
-				return False
-			
-			# Create data string for signature verification (excluding signature field)
-			verification_data = {k: v for k, v in itn_data.items() if k != "signature"}
-			sorted_data = sorted(verification_data.items())
-			data_string = "&".join([f"{k}={quote_plus(str(v))}" for k, v in sorted_data])
-			
-			# Add passphrase if configured
-			if passphrase:
-				data_string += f"&passphrase={passphrase}"
-			
-			# Generate signature
-			expected_signature = hashlib.md5(data_string.encode("utf-8")).hexdigest()
-			
-			return expected_signature == received_signature
-			
+			return verify_itn_signature(itn_data, passphrase)
 		except Exception as e:
 			frappe.log_error(
-				f"Error verifying PayFast ITN signature: {str(e)}",
+				f"Error in deprecated verify_itn_signature: {str(e)}",
 				"PayFast Order Signature Error"
 			)
 			return False
 
 	def mark_as_complete(self, itn_data: dict = None):
-		"""Mark order as complete with payment details"""
-		self.status = "Complete"
+		"""
+		Mark order as complete with payment details.
+		
+		Args:
+			itn_data: Optional ITN data for additional logging
+		"""
+		self.status = ORDER_STATUS_COMPLETE
 		self.save(ignore_permissions=True)
+		
+		frappe.log_error(
+			f"PayFast Order {self.name} marked as complete\nAmount: {self.amount_gross} {self.currency}",
+			"PayFast Order Completed"
+		)
 
 	def mark_as_failed(self, error_message: str = None):
-		"""Mark order as failed"""
-		self.status = "Failed"
+		"""
+		Mark order as failed.
+		
+		Args:
+			error_message: Optional error message to store
+		"""
+		self.status = ORDER_STATUS_FAILED
 		
 		if error_message:
 			meta_data = json.loads(self.meta_data or "{}")
 			meta_data["error_message"] = error_message
+			meta_data["failed_at"] = frappe.utils.now()
 			self.meta_data = frappe.as_json(meta_data, indent=2)
 		
 		self.save(ignore_permissions=True)
+		
+		frappe.log_error(
+			f"PayFast Order {self.name} marked as failed\nReason: {error_message}",
+			"PayFast Order Failed"
+		)
 
 	def mark_as_cancelled(self, reason: str = None):
-		"""Mark order as cancelled"""
-		self.status = "Cancelled"
+		"""
+		Mark order as cancelled.
+		
+		Args:
+			reason: Optional reason for cancellation
+		"""
+		self.status = ORDER_STATUS_CANCELLED
 		
 		if reason:
 			meta_data = json.loads(self.meta_data or "{}")
 			meta_data["cancellation_reason"] = reason
+			meta_data["cancelled_at"] = frappe.utils.now()
 			self.meta_data = frappe.as_json(meta_data, indent=2)
 		
 		self.save(ignore_permissions=True)
+		
+		frappe.log_error(
+			f"PayFast Order {self.name} cancelled\nReason: {reason}",
+			"PayFast Order Cancelled"
+		)
 
 	def trigger_payment_completion(self):
-		"""Trigger ERPNext payment completion for linked documents"""
+		"""
+		Trigger ERPNext payment completion for linked reference documents.
+		
+		This method calls the on_payment_authorized hook on the reference document
+		to complete the payment workflow (e.g., marking invoice as paid).
+		"""
 		if not (self.ref_dt and self.ref_dn):
+			frappe.log_error(
+				f"PayFast Order {self.name} has no reference document to complete",
+				"PayFast Order No Reference"
+			)
 			return
 			
 		try:
@@ -204,26 +312,36 @@ class PayFastOrder(Document):
 			if hasattr(ref_doc, 'on_payment_authorized'):
 				ref_doc.run_method("on_payment_authorized", "Completed")
 				frappe.db.commit()
+				
+				frappe.log_error(
+					f"Payment completion triggered for {self.ref_dt} {self.ref_dn}",
+					"PayFast Payment Completion Success"
+				)
+			else:
+				frappe.log_error(
+					f"{self.ref_dt} does not have on_payment_authorized method",
+					"PayFast Payment Completion Warning"
+				)
 		except Exception as e:
 			frappe.log_error(
-				f"Error triggering payment completion for {self.ref_dt} {self.ref_dn}: {str(e)}",
+				f"Error triggering payment completion for {self.ref_dt} {self.ref_dn}: {str(e)}\n{frappe.get_traceback()}",
 				"PayFast Order Payment Completion Error"
 			)
 
 	@property
 	def is_complete(self) -> bool:
-		"""Check if order is complete"""
-		return self.status == "Complete"
+		"""Check if order is complete."""
+		return self.status == ORDER_STATUS_COMPLETE
 
 	@property
 	def is_failed(self) -> bool:
-		"""Check if order failed"""
-		return self.status == "Failed"
+		"""Check if order failed."""
+		return self.status == ORDER_STATUS_FAILED
 
 	@property
 	def is_cancelled(self) -> bool:
-		"""Check if order was cancelled"""
-		return self.status == "Cancelled"
+		"""Check if order was cancelled."""
+		return self.status == ORDER_STATUS_CANCELLED
 
 	@frappe.whitelist()
 	def retry_payment_completion(self):
@@ -240,7 +358,11 @@ class PayFastOrder(Document):
 			frappe.throw(_("Failed to retry payment completion: {0}").format(str(e)))
 
 	def validate(self):
-		"""Validate PayFast Order"""
+		"""
+		Validate PayFast Order before save.
+		
+		Ensures required fields are present and data is valid.
+		"""
 		# Ensure m_payment_id is provided
 		if not self.m_payment_id:
 			frappe.throw(_("Merchant Payment ID is required"))
@@ -249,31 +371,45 @@ class PayFastOrder(Document):
 		if self.amount_gross and self.amount_gross <= 0:
 			frappe.throw(_("Amount must be greater than zero"))
 
-		# Ensure currency is ZAR for PayFast
-		if self.currency and self.currency != "ZAR":
-			frappe.throw(_("PayFast only supports ZAR currency"))
+		# Ensure currency is ZAR for PayFast (using constant)
+		if self.currency and self.currency != SUPPORTED_CURRENCY:
+			frappe.throw(
+				_("PayFast only supports {0} currency").format(SUPPORTED_CURRENCY)
+			)
 
 	def on_update(self):
-		"""Called after save"""
+		"""
+		Called after save.
+		
+		Automatically links order to Integration Request and updates its status.
+		"""
 		# Auto-link to Integration Request if we can find it
 		if not hasattr(self, '_integration_request_linked'):
 			self.auto_link_integration_request()
 
 	def auto_link_integration_request(self):
-		"""Automatically link to Integration Request based on m_payment_id"""
+		"""
+		Automatically link to Integration Request based on m_payment_id.
+		
+		Updates Integration Request status when order is complete.
+		"""
 		try:
 			if self.m_payment_id and frappe.db.exists("Integration Request", self.m_payment_id):
 				# Update Integration Request status if this order is complete
-				if self.status == "Complete":
+				if self.status == ORDER_STATUS_COMPLETE:
 					integration_request = frappe.get_doc("Integration Request", self.m_payment_id)
 					if integration_request.status != "Completed":
 						integration_request.update_status({}, "Completed")
+						frappe.log_error(
+							f"Integration Request {self.m_payment_id} marked as Completed",
+							"PayFast Order Integration Link"
+						)
 				
 				self._integration_request_linked = True
-                        
+	                       
 		except Exception as e:
 			# Don't fail the order save if auto-linking fails
 			frappe.log_error(
-				f"Failed to auto-link Integration Request for PayFast Order {self.name}: {str(e)}",
+				f"Failed to auto-link Integration Request for PayFast Order {self.name}: {str(e)}\n{frappe.get_traceback()}",
 				"PayFast Order Auto-Link Error"
 			)

@@ -1,18 +1,50 @@
 # Copyright (c) 2024, Frappe Technologies and contributors
 # License: MIT. See LICENSE
 
-import hashlib
+"""
+PayFast ITN (Instant Transaction Notification) handler.
+
+This module handles webhook notifications from PayFast payment gateway,
+implementing all required security validations per PayFast documentation:
+1. IP address validation
+2. Signature verification
+3. Payment data confirmation
+
+Reference: https://developers.payfast.co.za/docs
+"""
+
 import json
 
 import frappe
 from frappe import _
+
+# Import PayFast utilities
+from payments.payment_gateways.doctype.payfast_settings.payfast_utils import (
+    validate_itn_source_ip,
+    confirm_payment_with_payfast,
+)
+from payments.payment_gateways.doctype.payfast_settings.payfast_constants import (
+    REQUIRED_ITN_FIELDS,
+    VALID_PAYMENT_STATUSES,
+)
 
 
 @frappe.whitelist(allow_guest=True)
 def handle_itn():
     """
     ERPNext-compliant ITN (Instant Transaction Notification) handler for PayFast.
-    This follows the same patterns as the Yoco webhook handler.
+    
+    Implements all required security validations:
+    1. Source IP validation
+    2. Required fields validation
+    3. Signature verification (in PayfastOrder)
+    4. Payment confirmation with PayFast
+    
+    Returns:
+        dict: Response with status message
+        
+    Reference:
+        https://developers.payfast.co.za/docs#notify_page
     """
     try:
         # Get ITN data from form
@@ -24,14 +56,26 @@ def handle_itn():
             "PayFast ITN Received"
         )
         
-        # Validate ITN data
+        # CRITICAL SECURITY: Validate source IP
+        if not validate_itn_source_ip():
+            frappe.log_error(
+                f"PayFast ITN rejected - invalid source IP\nData: {json.dumps(itn_data, indent=2)}",
+                "PayFast ITN Security Error"
+            )
+            frappe.response.http_status_code = 403
+            frappe.response["message"] = "Forbidden"
+            return
+        
+        # Validate ITN data structure
         if not validate_itn_data(itn_data):
             frappe.log_error(
                 f"PayFast ITN validation failed: {json.dumps(itn_data, indent=2)}",
                 "PayFast ITN Validation Error"
             )
-            frappe.throw(_("Invalid ITN data"), frappe.ValidationError)
-
+            frappe.response.http_status_code = 400
+            frappe.response["message"] = "Invalid ITN data"
+            return
+        
         # Process ITN using PayfastSettings controller
         process_itn_notification(itn_data)
         
@@ -48,7 +92,18 @@ def handle_itn():
 
 
 def process_itn_notification(itn_data: dict):
-    """Process ITN notification using PayfastSettings controller"""
+    """
+    Process ITN notification using PayfastSettings controller.
+    
+    Args:
+        itn_data: Dictionary containing ITN data from PayFast
+        
+    Returns:
+        bool: True if processing succeeded, False otherwise
+        
+    Raises:
+        Exception: Re-raises exceptions for proper error handling
+    """
     try:
         # Get PayFast settings from custom_str1
         settings_name = itn_data.get("custom_str1")
@@ -60,6 +115,17 @@ def process_itn_notification(itn_data: dict):
             return False
             
         settings = frappe.get_doc("Payfast Settings", settings_name)
+        
+        # CRITICAL SECURITY: Confirm payment with PayFast
+        # This validates the payment was actually processed
+        if not confirm_payment_with_payfast(itn_data, settings.sandbox_mode):
+            frappe.log_error(
+                f"PayFast payment confirmation failed for settings {settings_name}\nData: {json.dumps(itn_data, indent=2)}",
+                "PayFast Payment Confirmation Failed"
+            )
+            return False
+        
+        # Process the ITN through settings controller
         success = settings.handle_itn_notification(itn_data)
         
         if success:
@@ -80,13 +146,21 @@ def process_itn_notification(itn_data: dict):
 
 def validate_itn_data(itn_data: dict) -> bool:
     """
-    Basic validation of PayFast ITN data.
-    More comprehensive validation happens in PayfastOrder.verify_itn_signature()
+    Validate PayFast ITN data structure and required fields.
+    
+    Args:
+        itn_data: Dictionary containing ITN data from PayFast
+        
+    Returns:
+        bool: True if data is valid, False otherwise
+        
+    Note:
+        Signature verification and payment confirmation happen separately
+        for better security layering.
     """
     try:
         # Check required fields
-        required_fields = ["m_payment_id", "payment_status", "amount_gross"]
-        for field in required_fields:
+        for field in REQUIRED_ITN_FIELDS:
             if not itn_data.get(field):
                 frappe.log_error(
                     f"PayFast ITN missing required field: {field}",
@@ -95,19 +169,24 @@ def validate_itn_data(itn_data: dict) -> bool:
                 return False
         
         # Validate payment status
-        valid_statuses = ["COMPLETE", "FAILED", "CANCELLED"]
         payment_status = itn_data.get("payment_status")
-        if payment_status not in valid_statuses:
+        if payment_status not in VALID_PAYMENT_STATUSES:
             frappe.log_error(
-                f"PayFast ITN invalid payment status: {payment_status}",
+                f"PayFast ITN invalid payment status: {payment_status}\nValid statuses: {', '.join(VALID_PAYMENT_STATUSES)}",
                 "PayFast ITN Validation Error"
             )
             return False
         
         # Validate amount format
         try:
-            float(itn_data.get("amount_gross", 0))
-        except ValueError:
+            amount = float(itn_data.get("amount_gross", 0))
+            if amount <= 0:
+                frappe.log_error(
+                    f"PayFast ITN invalid amount: {amount}",
+                    "PayFast ITN Validation Error"
+                )
+                return False
+        except (ValueError, TypeError):
             frappe.log_error(
                 f"PayFast ITN invalid amount_gross format: {itn_data.get('amount_gross')}",
                 "PayFast ITN Validation Error"
@@ -118,7 +197,7 @@ def validate_itn_data(itn_data: dict) -> bool:
         
     except Exception as e:
         frappe.log_error(
-            f"Error validating PayFast ITN data: {str(e)}",
+            f"Error validating PayFast ITN data: {str(e)}\n{frappe.get_traceback()}",
             "PayFast ITN Validation Error"
         )
         return False
@@ -126,82 +205,47 @@ def validate_itn_data(itn_data: dict) -> bool:
 
 def validate_itn(data):
     """
-    Legacy validation function - deprecated.
-    Use validate_itn_data() instead which follows ERPNext patterns.
+    Legacy validation function - DEPRECATED.
+    
+    Use validate_itn_data() and payfast_utils.verify_itn_signature() instead
+    which follow ERPNext patterns and provide better security.
+    
+    This function is kept only for backward compatibility and will be removed
+    in a future version.
+    
+    Args:
+        data: ITN data dictionary
+        
+    Returns:
+        bool: Always returns False with deprecation warning
     """
     frappe.log_error(
-        "validate_itn called - this function is deprecated. "
-        "Use validate_itn_data() instead which follows ERPNext patterns.",
-        "PayFast ITN Deprecated Function"
+        "validate_itn() called - this function is DEPRECATED!\n"
+        "Use validate_itn_data() and payfast_utils.verify_itn_signature() instead.\n"
+        "This function will be removed in a future version.",
+        "PayFast ITN Deprecated Function Warning"
     )
-    
-    try:
-        # Simplified validation for this context. In production, use all validation steps.
-        settings = frappe.get_doc("Payfast Settings")
-        received_signature = data.get("signature")
-        
-        # Create string from form data
-        form_data = {k: v for k, v in data.items() if k != 'signature'}
-        ordered_data = sorted(form_data.items(), key=lambda item: item[0])
-        data_string = '&'.join([f"{k}={v}" for k, v in ordered_data])
-        
-        passphrase = settings.get_password(fieldname="passphrase", raise_exception=False)
-        if passphrase:
-            data_string += f"&passphrase={passphrase}"
-
-        generated_signature = hashlib.md5(data_string.encode()).hexdigest()
-
-        if not generated_signature == received_signature:
-            frappe.log_error(
-                f"PayFast ITN signature mismatch. Received: {received_signature}, Generated: {generated_signature}", 
-                "PayFast ITN Validation Error"
-            )
-            return False
-            
-        return True
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Legacy PayFast ITN validation error: {str(e)}",
-            "PayFast ITN Legacy Validation Error"
-        )
-        return False
+    return False
 
 
 # Backward compatibility functions
-@frappe.whitelist(allow_guest=True) 
+@frappe.whitelist(allow_guest=True)
 def handle_itn_legacy():
     """
-    Legacy ITN handler - deprecated.
-    Use handle_itn() instead.
+    Legacy ITN handler - DEPRECATED.
+    
+    Use handle_itn() instead which implements all required security validations.
+    
+    This function is kept only for backward compatibility and will be removed
+    in a future version. It redirects to the new handle_itn() function.
     """
     frappe.log_error(
-        "handle_itn_legacy called - this function is deprecated. "
-        "Use handle_itn() instead which follows ERPNext compliance patterns.",
-        "PayFast ITN Deprecated Function"
+        "handle_itn_legacy() called - this function is DEPRECATED!\n"
+        "Use handle_itn() instead which follows ERPNext compliance patterns "
+        "and implements all security validations.\n"
+        "This function will be removed in a future version.",
+        "PayFast ITN Deprecated Function Warning"
     )
     
-    try:
-        itn_data = dict(frappe.request.form)
-        
-        if not validate_itn_data(itn_data):
-            frappe.log_error("PayFast ITN validation failed", "PayFast ITN Error")
-            return
-
-        if itn_data.get("payment_status") == "COMPLETE":
-            payment_request_id = itn_data.get("custom_str2")
-            if payment_request_id:
-                pr = frappe.get_doc("Payment Request", payment_request_id)
-                pr.run_method("set_as_paid")
-        else:
-            # Log other statuses for now
-            frappe.log_error(
-                f"PayFast ITN: Received non-complete status '{itn_data.get('payment_status')}'", 
-                "PayFast ITN Info"
-            )
-
-        frappe.response["message"] = "OK"
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "Error processing PayFast ITN")
-        frappe.response.http_status_code = 500
+    # Redirect to new handler
+    return handle_itn()
