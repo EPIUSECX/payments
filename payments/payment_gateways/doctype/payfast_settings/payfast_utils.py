@@ -176,27 +176,40 @@ def confirm_payment_with_payfast(itn_data: dict, sandbox_mode: bool = False) -> 
 def generate_payment_signature(form_data: dict, passphrase: str = None) -> str:
     """
     Generate MD5 signature for PayFast payment form.
-    
+
     Args:
         form_data: Payment form data to sign
         passphrase: Optional passphrase for enhanced security
-        
+
     Returns:
         str: MD5 hash signature
-        
+
     Reference:
         https://developers.payfast.co.za/docs#security
     """
     # Create URL encoded string
     sorted_data = dict(sorted(form_data.items()))
     pf_output = "&".join(f"{k}={quote_plus(str(v))}" for k, v in sorted_data.items())
-    
+
     # Add passphrase if provided
     if passphrase:
         pf_output += f"&passphrase={passphrase}"
-    
+
+    # Debug logging
+    frappe.log_error(
+        f"[PAYFAST DEBUG] Signature calculation:\nData: {sorted_data}\nPassphrase present: {bool(passphrase)}\nString: {pf_output}",
+        "PayFast Signature Debug"
+    )
+
     # Generate MD5 hash
-    return hashlib.md5(pf_output.encode("utf-8")).hexdigest()
+    signature = hashlib.md5(pf_output.encode("utf-8")).hexdigest()
+
+    frappe.log_error(
+        f"[PAYFAST DEBUG] Generated signature: {signature}",
+        "PayFast Signature Debug"
+    )
+
+    return signature
 
 
 def get_payfast_settings(settings_name: str = None):
