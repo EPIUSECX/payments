@@ -26,30 +26,35 @@
    "reqd": 1
   },
   {
+   "description": "Optional security passphrase from PayFast dashboard Settings > Integration > Security. Must match exactly (case-sensitive).",
    "fieldname": "passphrase",
    "fieldtype": "Password",
    "label": "Passphrase"
   },
   {
    "default": "0",
+   "description": "Enable to use PayFast sandbox for testing. Use sandbox credentials when enabled.",
    "fieldname": "sandbox_mode",
    "fieldtype": "Check",
    "label": "Sandbox Mode"
   },
   {
+   "description": "Example: /payment-success (user sees success page after payment)",
    "fieldname": "return_url",
    "fieldtype": "Data",
    "label": "Return URL"
   },
   {
+   "description": "Example: /payment-failed (user sees cancel page)",
    "fieldname": "cancel_url",
    "fieldtype": "Data",
    "label": "Cancel URL"
   },
   {
+   "description": "/api/method/payments.payment_gateways.payfast_itn.handle_itn",
    "fieldname": "notify_url",
    "fieldtype": "Data",
-   "label": "Notify URL"
+   "label": "Notify URL (ITN)"
   }
  ],
  "modified": "2024-05-03 12:00:00.000000",

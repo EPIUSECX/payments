@@ -344,19 +344,34 @@ class PayfastSettings(Document):
 			form_data["merchant_key"] = self.merchant_key
 			
 			# 2. Return/Cancel/Notify URLs (before buyer details)
+			# IMPORTANT: These must be DIFFERENT URLs with different purposes:
+			# - return_url: User-facing success page (after payment completes)
+			# - cancel_url: User-facing cancel/failure page
+			# - notify_url: Background ITN webhook (marks invoice as paid)
+			
+			# Return URL - user sees success page
 			if self.return_url:
 				form_data["return_url"] = self.return_url
 			else:
-				form_data["return_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
-				
+				# Default: redirect to payment-success page with document reference
+				ref_doctype = self.data.get("reference_doctype", "")
+				ref_docname = self.data.get("reference_docname", "")
+				if ref_doctype and ref_docname:
+					form_data["return_url"] = f"{base_url}/payment-success?doctype={ref_doctype}&docname={ref_docname}"
+				else:
+					form_data["return_url"] = f"{base_url}/payment-success"
+			
+			# Cancel URL - user sees cancel/failed page
 			if self.cancel_url:
 				form_data["cancel_url"] = self.cancel_url
 			else:
-				form_data["cancel_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
-				
+				form_data["cancel_url"] = f"{base_url}/payment-failed"
+			
+			# Notify URL - background ITN webhook (marks invoice paid, creates payment entry)
 			if self.notify_url:
 				form_data["notify_url"] = self.notify_url
 			else:
+				# ITN handler processes payment in background
 				form_data["notify_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
 			
 			# 3. Buyer details
@@ -464,6 +479,15 @@ class PayfastSettings(Document):
 				return False
 			
 			payfast_order = frappe.db.get_value("PayFast Order", {"m_payment_id": m_payment_id})
+			
+			frappe.log_error(
+				f"[ITN DEBUG] PayFast Order Lookup:\n"
+				f"m_payment_id: {m_payment_id}\n"
+				f"Order Found: {payfast_order}\n"
+				f"Settings: {self.name}",
+				"PayFast ITN Order Lookup"
+			)
+			
 			if not payfast_order:
 				frappe.log_error(
 					f"PayFast Order not found for m_payment_id: {m_payment_id}",

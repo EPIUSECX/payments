@@ -136,14 +136,26 @@ class PayFastOrder(Document):
 			passphrase = settings.get_password("passphrase", raise_exception=False)
 			
 			# CRITICAL: Verify signature using utility function
-			if not verify_itn_signature(itn_data, passphrase):
+			signature_valid = verify_itn_signature(itn_data, passphrase)
+			
+			frappe.log_error(
+				f"[ITN DEBUG] Signature Verification:\n"
+				f"Order: {self.name}\n"
+				f"Settings: {settings_name}\n"
+				f"Signature Valid: {signature_valid}\n"
+				f"Provided Signature: {itn_data.get('signature')}\n"
+				f"Has Passphrase: {bool(passphrase)}",
+				"PayFast ITN Signature Check"
+			)
+			
+			if not signature_valid:
 				frappe.log_error(
 					f"PayFast ITN signature verification failed for order {self.name}",
 					"PayFast Order ITN Error"
 				)
 				self.mark_as_failed("ITN signature verification failed")
 				return False
-
+	
 			# Update order with ITN data
 			self.update_from_itn_data(itn_data)
 			
@@ -300,31 +312,66 @@ class PayFastOrder(Document):
 		This method calls the on_payment_authorized hook on the reference document
 		to complete the payment workflow (e.g., marking invoice as paid).
 		"""
+		frappe.log_error(
+			f"[ITN DEBUG] trigger_payment_completion called:\n"
+			f"Order: {self.name}\n"
+			f"ref_dt: {self.ref_dt}\n"
+			f"ref_dn: {self.ref_dn}\n"
+			f"m_payment_id: {self.m_payment_id}\n"
+			f"amount_gross: {self.amount_gross}\n"
+			f"status: {self.status}",
+			"PayFast ITN Payment Completion Start"
+		)
+		
 		if not (self.ref_dt and self.ref_dn):
 			frappe.log_error(
-				f"PayFast Order {self.name} has no reference document to complete",
+				f"PayFast Order {self.name} has no reference document to complete\n"
+				f"ref_dt: {self.ref_dt}, ref_dn: {self.ref_dn}\n"
+				f"This order cannot trigger payment completion without reference document!",
 				"PayFast Order No Reference"
 			)
 			return
 			
 		try:
 			ref_doc = frappe.get_doc(self.ref_dt, self.ref_dn)
+			
+			frappe.log_error(
+				f"[ITN DEBUG] Reference Document Loaded:\n"
+				f"DocType: {self.ref_dt}\n"
+				f"DocName: {self.ref_dn}\n"
+				f"Has on_payment_authorized: {hasattr(ref_doc, 'on_payment_authorized')}\n"
+				f"Document Status: {getattr(ref_doc, 'status', 'N/A')}\n"
+				f"Document docstatus: {getattr(ref_doc, 'docstatus', 'N/A')}",
+				"PayFast ITN Reference Document Check"
+			)
+			
 			if hasattr(ref_doc, 'on_payment_authorized'):
+				frappe.log_error(
+					f"[ITN DEBUG] Calling on_payment_authorized('Completed') on {self.ref_dt} {self.ref_dn}",
+					"PayFast ITN Calling Payment Method"
+				)
+				
 				ref_doc.run_method("on_payment_authorized", "Completed")
 				frappe.db.commit()
 				
 				frappe.log_error(
-					f"Payment completion triggered for {self.ref_dt} {self.ref_dn}",
+					f"[ITN DEBUG] Payment completion SUCCESS!\n"
+					f"Called on_payment_authorized on {self.ref_dt} {self.ref_dn}\n"
+					f"Changes committed to database",
 					"PayFast Payment Completion Success"
 				)
 			else:
 				frappe.log_error(
-					f"{self.ref_dt} does not have on_payment_authorized method",
+					f"[ITN DEBUG] PROBLEM: {self.ref_dt} does not have on_payment_authorized method\n"
+					f"Available methods: {[m for m in dir(ref_doc) if not m.startswith('_')]}",
 					"PayFast Payment Completion Warning"
 				)
 		except Exception as e:
 			frappe.log_error(
-				f"Error triggering payment completion for {self.ref_dt} {self.ref_dn}: {str(e)}\n{frappe.get_traceback()}",
+				f"[ITN DEBUG] ERROR triggering payment completion:\n"
+				f"DocType: {self.ref_dt}\n"
+				f"DocName: {self.ref_dn}\n"
+				f"Error: {str(e)}\n{frappe.get_traceback()}",
 				"PayFast Order Payment Completion Error"
 			)
 

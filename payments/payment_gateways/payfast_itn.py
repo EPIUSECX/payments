@@ -57,9 +57,22 @@ def handle_itn():
         )
         
         # CRITICAL SECURITY: Validate source IP
-        if not validate_itn_source_ip():
+        source_ip = frappe.request.remote_addr
+        is_valid_ip = validate_itn_source_ip()
+        
+        frappe.log_error(
+            f"[ITN DEBUG] IP Validation Check:\n"
+            f"Source IP: {source_ip}\n"
+            f"Is Valid: {is_valid_ip}\n"
+            f"ITN Data: {json.dumps(itn_data, indent=2)}",
+            "PayFast ITN IP Validation"
+        )
+        
+        if not is_valid_ip:
             frappe.log_error(
-                f"PayFast ITN rejected - invalid source IP\nData: {json.dumps(itn_data, indent=2)}",
+                f"PayFast ITN rejected - invalid source IP: {source_ip}\n"
+                f"Expected PayFast IPs (check payfast_utils.py)\n"
+                f"Data: {json.dumps(itn_data, indent=2)}",
                 "PayFast ITN Security Error"
             )
             frappe.response.http_status_code = 403
@@ -118,7 +131,20 @@ def process_itn_notification(itn_data: dict):
         
         # CRITICAL SECURITY: Confirm payment with PayFast
         # This validates the payment was actually processed
-        if not confirm_payment_with_payfast(itn_data, settings.sandbox_mode):
+        confirmation_result = confirm_payment_with_payfast(itn_data, settings.sandbox_mode)
+        
+        frappe.log_error(
+            f"[ITN DEBUG] Payment Confirmation Check:\n"
+            f"Settings: {settings_name}\n"
+            f"Sandbox Mode: {settings.sandbox_mode}\n"
+            f"Confirmation Result: {confirmation_result}\n"
+            f"m_payment_id: {itn_data.get('m_payment_id')}\n"
+            f"pf_payment_id: {itn_data.get('pf_payment_id')}\n"
+            f"payment_status: {itn_data.get('payment_status')}",
+            "PayFast ITN Payment Confirmation"
+        )
+        
+        if not confirmation_result:
             frappe.log_error(
                 f"PayFast payment confirmation failed for settings {settings_name}\nData: {json.dumps(itn_data, indent=2)}",
                 "PayFast Payment Confirmation Failed"
