@@ -9,7 +9,7 @@ Consolidates common functionality used across multiple modules.
 import hashlib
 import ipaddress
 import requests
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import urlencode
 
 import frappe
 from frappe import _
@@ -24,6 +24,9 @@ from .payfast_constants import (
 def verify_itn_signature(itn_data: dict, passphrase: str = None) -> bool:
     """
     Verify PayFast ITN signature using MD5 hash.
+    
+    This implementation matches the payment signature generation method
+    to ensure consistency.
     
     Args:
         itn_data: Dictionary containing ITN data from PayFast
@@ -47,10 +50,12 @@ def verify_itn_signature(itn_data: dict, passphrase: str = None) -> bool:
         
         # Create data string for signature verification (excluding signature field)
         verification_data = {k: v for k, v in itn_data.items() if k != "signature"}
-        sorted_data = sorted(verification_data.items())
-        data_string = "&".join([f"{k}={quote_plus(str(v))}" for k, v in sorted_data])
         
-        # Add passphrase if configured
+        # CRITICAL: Use insertion order NOT alphabetical (per PayFast docs)
+        # PayFast explicitly states: "Do not use the API signature format, which uses alphabetical ordering!"
+        data_string = urlencode(list(verification_data.items()))
+        
+        # Add passphrase if configured (not URL encoded)
         if passphrase:
             data_string += f"&passphrase={passphrase}"
         
@@ -62,8 +67,16 @@ def verify_itn_signature(itn_data: dict, passphrase: str = None) -> bool:
         
         if not is_valid:
             frappe.log_error(
-                f"PayFast signature mismatch\nExpected: {expected_signature}\nReceived: {received_signature}\nData: {data_string}",
+                f"PayFast ITN signature verification failed\n"
+                f"Expected: {expected_signature}\n"
+                f"Received: {received_signature}\n"
+                f"Data string: {data_string}",
                 "PayFast Signature Verification Failed"
+            )
+        else:
+            frappe.log_error(
+                f"PayFast ITN signature verified successfully: {received_signature}",
+                "PayFast Signature Verification Success"
             )
         
         return is_valid
@@ -176,6 +189,9 @@ def confirm_payment_with_payfast(itn_data: dict, sandbox_mode: bool = False) -> 
 def generate_payment_signature(form_data: dict, passphrase: str = None) -> str:
     """
     Generate MD5 signature for PayFast payment form.
+    
+    This implementation follows PayFast's official documentation and sample code
+    to ensure signature compatibility.
 
     Args:
         form_data: Payment form data to sign
@@ -187,19 +203,25 @@ def generate_payment_signature(form_data: dict, passphrase: str = None) -> str:
     Reference:
         https://developers.payfast.co.za/docs#security
     """
-    # Create URL encoded string - exclude signature field if present
-    # Also exclude custom_str1 and custom_str2 as they might not be expected by PayFast
-    signature_data = {k: v for k, v in form_data.items() if k not in ["signature", "custom_str1", "custom_str2"]}
-    sorted_data = dict(sorted(signature_data.items()))
-    pf_output = "&".join(f"{k}={quote_plus(str(v))}" for k, v in sorted_data.items())
+    # Create URL encoded string - exclude only the signature field
+    # PayFast requires ALL other fields including custom_str1 and custom_str2
+    signature_data = {k: v for k, v in form_data.items() if k != "signature"}
+    
+    # CRITICAL: Use insertion order NOT alphabetical ordering
+    # PayFast explicitly states: "Do not use the API signature format, which uses alphabetical ordering!"
+    # Fields must be in the order they were added to the dictionary
+    pf_output = urlencode(list(signature_data.items()))
 
-    # Add passphrase if provided
+    # Add passphrase if provided (not URL encoded, as per PayFast docs)
     if passphrase:
         pf_output += f"&passphrase={passphrase}"
 
     # Debug logging
     frappe.log_error(
-        f"[PAYFAST DEBUG] Signature calculation (excluding signature, custom_str1, custom_str2):\nData: {sorted_data}\nPassphrase present: {bool(passphrase)}\nString: {pf_output}",
+        f"[PAYFAST DEBUG] Signature calculation:\n"
+        f"Data (in insertion order): {signature_data}\n"
+        f"Passphrase present: {bool(passphrase)}\n"
+        f"Encoded string: {pf_output}",
         "PayFast Signature Debug"
     )
 

@@ -326,54 +326,79 @@ class PayfastSettings(Document):
 		)
 		
 		try:
-			# Prepare data for PayFast form
-			step_time = time.time()
-			frappe.log_error(f"[PAYFAST DEBUG] Step 1: Building form_data", "PayFast Settings Debug")
+			# CRITICAL: PayFast requires fields in INSERTION ORDER, not alphabetical!
+			# Reference: "Do not use the API signature format, which uses alphabetical ordering!"
+			# https://developers.payfast.co.za/docs#security
 			
-			form_data = {
-				"merchant_id": self.merchant_id,
-				"merchant_key": self.merchant_key,
-				"name_first": self.data.get("payer_name", "").split(" ")[0] if self.data.get("payer_name") else "",
-				"name_last": " ".join(self.data.get("payer_name", "").split(" ")[1:]) if self.data.get("payer_name") else "",
-				"m_payment_id": payfast_order_data["m_payment_id"],
-				"amount": "{:.2f}".format(flt(self.data.amount)),
-				"item_name": self.data.get("title", "Payment"),
-				"item_description": self.data.get("description", ""),
-				"custom_str1": self.name,  # PayFast Settings document name for ITN routing
-				"custom_str2": self.data.get("reference_docname", ""),  # Reference document name
-			}
-			frappe.log_error(f"[PAYFAST DEBUG] Step 1 complete in {time.time() - step_time:.2f}s", "PayFast Settings Debug")
-
-			# Add optional fields
 			step_time = time.time()
-			frappe.log_error(f"[PAYFAST DEBUG] Step 2: Adding optional fields", "PayFast Settings Debug")
+			frappe.log_error(f"[PAYFAST DEBUG] Step 1: Building form_data in correct order", "PayFast Settings Debug")
+			
+			# Fix: Ensure URLs don't have double slashes
+			base_url = get_url("").rstrip("/")
+			
+			# Build form_data in PayFast's required order
+			form_data = {}
+			
+			# 1. Merchant details (required, first)
+			form_data["merchant_id"] = self.merchant_id
+			form_data["merchant_key"] = self.merchant_key
+			
+			# 2. Return/Cancel/Notify URLs (before buyer details)
 			if self.return_url:
 				form_data["return_url"] = self.return_url
+			else:
+				form_data["return_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
+				
 			if self.cancel_url:
 				form_data["cancel_url"] = self.cancel_url
+			else:
+				form_data["cancel_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
+				
 			if self.notify_url:
 				form_data["notify_url"] = self.notify_url
 			else:
-				# Default ITN URL if not configured
-				form_data["notify_url"] = get_url("/api/method/payments.payment_gateways.payfast_itn.handle_itn")
+				form_data["notify_url"] = f"{base_url}/api/method/payments.payment_gateways.payfast_itn.handle_itn"
 			
-			# Add email if available
+			# 3. Buyer details
+			payer_name = self.data.get("payer_name", "")
+			if payer_name:
+				form_data["name_first"] = payer_name.split(" ")[0]
+				name_parts = payer_name.split(" ")[1:]
+				if name_parts:
+					form_data["name_last"] = " ".join(name_parts)
+			
+			# Email address (if available)
 			email = self.data.get("payer_email")
 			if not email and self.data.get("customer"):
 				email = frappe.db.get_value("Customer", self.data.get("customer"), "email_id")
 			if email:
 				form_data["email_address"] = email
-			frappe.log_error(f"[PAYFAST DEBUG] Step 2 complete in {time.time() - step_time:.2f}s", "PayFast Settings Debug")
-
-			# Remove any empty values
+			
+			# 4. Transaction details
+			form_data["m_payment_id"] = payfast_order_data["m_payment_id"]
+			form_data["amount"] = "{:.2f}".format(flt(self.data.amount))
+			form_data["item_name"] = self.data.get("title", "Payment")
+			
+			# Item description (if available)
+			if self.data.get("description"):
+				form_data["item_description"] = self.data.get("description")
+			
+			# 5. Custom fields (last)
+			form_data["custom_str1"] = self.name  # PayFast Settings document name
+			if self.data.get("reference_docname"):
+				form_data["custom_str2"] = self.data.get("reference_docname")
+			
+			# Remove any empty values to keep the string clean
 			form_data = {k: v for k, v in form_data.items() if v}
+			
+			frappe.log_error(f"[PAYFAST DEBUG] Step 1 complete in {time.time() - step_time:.2f}s", "PayFast Settings Debug")
 
 			# Create signature using utility function
 			step_time = time.time()
-			frappe.log_error(f"[PAYFAST DEBUG] Step 3: Generating signature", "PayFast Settings Debug")
+			frappe.log_error(f"[PAYFAST DEBUG] Step 2: Generating signature with insertion order", "PayFast Settings Debug")
 			passphrase = self.get_password("passphrase", raise_exception=False)
 			form_data["signature"] = generate_payment_signature(form_data, passphrase)
-			frappe.log_error(f"[PAYFAST DEBUG] Step 3 complete in {time.time() - step_time:.2f}s", "PayFast Settings Debug")
+			frappe.log_error(f"[PAYFAST DEBUG] Step 2 complete in {time.time() - step_time:.2f}s", "PayFast Settings Debug")
 
 			# Generate PayFast URL using constants
 			payfast_url = PAYFAST_SANDBOX_URL if self.sandbox_mode else PAYFAST_LIVE_URL
