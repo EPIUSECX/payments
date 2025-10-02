@@ -14,7 +14,7 @@ window.csrf_token = "{{ csrf_token }}";
 {%- block page_content -%}
 <div class="payfast-checkout-container">
     <div class="payfast-checkout-card">
-        <img src="https://www.payfast.io/wp-content/uploads/2023/03/payfast-logo.svg" alt="Payfast Logo" class="payfast-logo">
+        <img src="https://payfast.io/wp-content/uploads/2024/12/Payfast-logo.svg" alt="Payfast Logo" class="payfast-logo">
         <div class="transaction-details">
             <h4>{{ _("Payment for") }} {{ reference_docname }}</h4>
             <p class="amount">{{ frappe.utils.fmt_money(amount, currency=currency) }}</p>
