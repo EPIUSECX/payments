@@ -187,8 +187,10 @@ def generate_payment_signature(form_data: dict, passphrase: str = None) -> str:
     Reference:
         https://developers.payfast.co.za/docs#security
     """
-    # Create URL encoded string
-    sorted_data = dict(sorted(form_data.items()))
+    # Create URL encoded string - exclude signature field if present
+    # Also exclude custom_str1 and custom_str2 as they might not be expected by PayFast
+    signature_data = {k: v for k, v in form_data.items() if k not in ["signature", "custom_str1", "custom_str2"]}
+    sorted_data = dict(sorted(signature_data.items()))
     pf_output = "&".join(f"{k}={quote_plus(str(v))}" for k, v in sorted_data.items())
 
     # Add passphrase if provided
@@ -197,7 +199,7 @@ def generate_payment_signature(form_data: dict, passphrase: str = None) -> str:
 
     # Debug logging
     frappe.log_error(
-        f"[PAYFAST DEBUG] Signature calculation:\nData: {sorted_data}\nPassphrase present: {bool(passphrase)}\nString: {pf_output}",
+        f"[PAYFAST DEBUG] Signature calculation (excluding signature, custom_str1, custom_str2):\nData: {sorted_data}\nPassphrase present: {bool(passphrase)}\nString: {pf_output}",
         "PayFast Signature Debug"
     )
 
