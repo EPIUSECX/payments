@@ -116,8 +116,10 @@ def get_payment_url(token):
 		frappe.log_error(f"[PAYFAST DEBUG] Step 2 complete in {time.time() - step_time:.2f}s\nDetails: {json.dumps(payment_details, indent=2)}", "PayFast get_payment_url Debug")
 
 		step_time = time.time()
-		settings_name = payment_details.get("payment_gateway_account")
-		frappe.log_error(f"[PAYFAST DEBUG] Step 3: Getting Payfast Settings: {settings_name}", "PayFast get_payment_url Debug")
+		frappe.log_error(f"[PAYFAST DEBUG] Step 3: Getting Payment Gateway document", "PayFast get_payment_url Debug")
+		gateway_controller = frappe.get_doc("Payment Gateway", payment_details.get("payment_gateway"))
+		settings_name = gateway_controller.gateway_controller
+		frappe.log_error(f"[PAYFAST DEBUG] Step 3: Extracted settings name: {settings_name} from gateway {gateway_controller.name}", "PayFast get_payment_url Debug")
 		controller = frappe.get_doc("Payfast Settings", settings_name)
 		frappe.log_error(f"[PAYFAST DEBUG] Step 3 complete in {time.time() - step_time:.2f}s", "PayFast get_payment_url Debug")
 
