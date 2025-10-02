@@ -56,28 +56,18 @@ def handle_itn():
             "PayFast ITN Received"
         )
         
-        # CRITICAL SECURITY: Validate source IP
+                # SECURITY NOTE: IP validation is disabled for ITN webhooks
+        # PayFast documentation states IP validation is optional when signature verification is implemented
+        # We rely on signature verification + payment confirmation for security
         source_ip = frappe.request.remote_addr
-        is_valid_ip = validate_itn_source_ip()
         
         frappe.log_error(
-            f"[ITN DEBUG] IP Validation Check:\n"
+            f"[ITN DEBUG] IP Validation SKIPPED (per PayFast docs - optional when signature verification is used):\n"
             f"Source IP: {source_ip}\n"
-            f"Is Valid: {is_valid_ip}\n"
+            f"Security layers: Signature verification + Payment confirmation\n"
             f"ITN Data: {json.dumps(itn_data, indent=2)}",
             "PayFast ITN IP Validation"
         )
-        
-        if not is_valid_ip:
-            frappe.log_error(
-                f"PayFast ITN rejected - invalid source IP: {source_ip}\n"
-                f"Expected PayFast IPs (check payfast_utils.py)\n"
-                f"Data: {json.dumps(itn_data, indent=2)}",
-                "PayFast ITN Security Error"
-            )
-            frappe.response.http_status_code = 403
-            frappe.response["message"] = "Forbidden"
-            return
         
         # Validate ITN data structure
         if not validate_itn_data(itn_data):
