@@ -9,6 +9,7 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = [
     "paytmchecksum~=1.7.0",
+    "svix>=1.0.0",
     "razorpay~=2.0.0",
     "stripe~=10.12.0",
     "braintree~=4.20.0",
@@ -63,4 +64,4 @@ Repository = "https://github.com/frappe/payments.git"
 "Bug Reports" = "https://github.com/frappe/payments/issues"
 
 [tool.bench.frappe-dependencies]
-frappe = ">=17.0.0-dev,<18.0.0"
+frappe = ">=16.0.0-dev,<18.0.0"
